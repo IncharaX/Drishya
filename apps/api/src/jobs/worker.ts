@@ -4,6 +4,7 @@ import { generationJob, workerHeartbeat } from "@drishya/db/schema";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../database";
 import { HttpError } from "../http-error";
+import { executeExplanation } from "../explanations/pipeline";
 import { executePlanning } from "../planning/service";
 import { executeVoiceover } from "../speech/service";
 import { executeStoryboard } from "../storyboards/service";
@@ -225,6 +226,9 @@ async function execute(job: typeof generationJob.$inferSelect) {
       },
       async () => {
         switch (job.kind) {
+          case "explanation":
+            await executeExplanation(job.resourceId, controller.signal);
+            break;
           case "plan":
             await executePlanning(job.resourceId, controller.signal);
             break;

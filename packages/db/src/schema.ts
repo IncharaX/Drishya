@@ -297,7 +297,7 @@ export const generationJob = drishya.table(
       onDelete: "cascade",
     }),
     kind: text("kind", {
-      enum: ["plan", "storyboard", "voiceover", "video"],
+      enum: ["plan", "storyboard", "voiceover", "video", "explanation"],
     }).notNull(),
     resourceId: uuid("resource_id").notNull(),
     payload: jsonb("payload")
@@ -352,3 +352,155 @@ export const workerHeartbeat = drishya.table("worker_heartbeat", {
   id: text("id").primaryKey(),
   seenAt: timestamp("seen_at", { withTimezone: true }).notNull(),
 });
+
+export const conversation = drishya.table(
+  "conversation",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    requestId: uuid("request_id").notNull(),
+    title: text("title").notNull(),
+    prompt: text("prompt").notNull(),
+    settings: jsonb("settings")
+      .$type<import("@drishya/contracts").CreationSettings>()
+      .notNull(),
+    activeRevisionId: uuid("active_revision_id"),
+    nextSequence: integer("next_sequence").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("conversation_owner_request_idx").on(t.userId, t.requestId),
+    index("conversation_owner_updated_idx").on(t.userId, t.updatedAt),
+  ],
+);
+
+export const conversationMessage = drishya.table(
+  "conversation_message",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    requestId: uuid("request_id"),
+    role: text("role", { enum: ["user", "assistant"] }).notNull(),
+    kind: text("kind", {
+      enum: ["text", "preferences", "chapters", "question", "generation"],
+    }).notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("conversation_message_sequence_idx").on(
+      t.conversationId,
+      t.sequence,
+    ),
+    uniqueIndex("conversation_message_request_idx").on(
+      t.conversationId,
+      t.requestId,
+    ),
+  ],
+);
+
+export const explanationRevision = drishya.table(
+  "explanation_revision",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    sourceRevisionId: uuid("source_revision_id"),
+    collectionId: uuid("collection_id"),
+    partIndex: integer("part_index"),
+    version: integer("version").notNull(),
+    title: text("title").notNull(),
+    intent: text("intent", { enum: ["create", "edit", "child"] })
+      .notNull()
+      .default("create"),
+    request: text("request").notNull(),
+    settings: jsonb("settings")
+      .$type<import("@drishya/contracts").CreationSettings>()
+      .notNull(),
+    status: text("status", {
+      enum: [
+        "queued",
+        "planning",
+        "awaiting_approval",
+        "awaiting_input",
+        "generating",
+        "narrating",
+        "rendering",
+        "ready",
+        "partial",
+        "failed",
+        "cancelled",
+      ],
+    })
+      .notNull()
+      .default("queued"),
+    stage: text("stage").notNull().default("Queued"),
+    progress: integer("progress").notNull().default(0),
+    outline: jsonb("outline")
+      .$type<import("@drishya/contracts").ChapterProposal[]>()
+      .notNull()
+      .default([]),
+    approved: boolean("approved").notNull().default(false),
+    plan: jsonb("plan").$type<import("@drishya/contracts").MotionPlan>(),
+    edit: jsonb("edit")
+      .$type<{
+        timestamp?: number;
+        beatId?: string;
+        selectedBeatIds?: string[];
+        partId?: string;
+        fitAttempts?: number;
+        appliedChanges?: string[];
+        groupBeatIds?: string[][];
+        answer?: string;
+        clarification?: {
+          question: string;
+          options: { label: string; value: string }[];
+        };
+      }>()
+      .notNull()
+      .default({}),
+    segmentKeys: jsonb("segment_keys")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    timings: jsonb("timings")
+      .$type<Record<string, number>>()
+      .notNull()
+      .default({}),
+    duration: integer("duration_ms"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("explanation_conversation_version_idx").on(
+      t.conversationId,
+      t.version,
+    ),
+    index("explanation_collection_idx").on(t.collectionId),
+    index("explanation_conversation_created_idx").on(
+      t.conversationId,
+      t.createdAt,
+    ),
+  ],
+);

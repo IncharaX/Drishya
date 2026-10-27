@@ -43,6 +43,13 @@
       "when": 1793100395511,
       "tag": "0005_complete_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793107011300,
+      "tag": "0006_futuristic_nova",
+      "breakpoints": true
     }
   ]
 }

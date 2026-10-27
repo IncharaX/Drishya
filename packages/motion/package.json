@@ -1,0 +1,37 @@
+{
+  "name": "@drishya/motion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/composition.tsx",
+    "./examples": "./src/examples.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@drishya/contracts": "workspace:*",
+    "remotion": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "@react-three/fiber": "9.8.2",
+    "three": "0.186.1",
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/noto-sans-devanagari": "5.3.0",
+    "@fontsource/noto-sans-kannada": "5.3.0",
+    "@fontsource/noto-sans-telugu": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/manrope": "5.3.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

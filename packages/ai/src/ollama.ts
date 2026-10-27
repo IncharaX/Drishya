@@ -109,7 +109,8 @@ export class OllamaPlanner implements PlannerProvider {
             keep_alive: "5m",
             options: {
               temperature: 0.2,
-              num_ctx: 12288,
+              num_ctx:
+                maxTokens >= 5000 ? 12288 : maxTokens >= 2500 ? 8192 : 6144,
               num_predict: maxTokens,
             },
           }),

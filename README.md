@@ -1,6 +1,12 @@
 # Drishya
 
-A visual teaching studio. pnpm + Turborepo monorepo with a Next.js frontend, Node/Express API, shadcn UI, Better Auth credentials, and Neon/PostgreSQL through Drizzle.
+A chat-first explanation video app. pnpm + Turborepo monorepo with Next.js, Node/Express, Better Auth, Neon/PostgreSQL through Drizzle, local Ollama/Indic Parler inference and Remotion rendering.
+
+## Chat-first workspace
+
+`/workspace` starts a chat. Confirm one preference card to automatically generate narration, animation and a downloadable video. Chats persist at `/workspace/chat/:id`; `/workspace/library` contains ready videos and chapter collections. Follow-up requests create saved revisions and reuse unchanged narration. Chapters require a combined duration exceeding 120 seconds and explicit approval. Selected fixed durations are rendered to the exact frame count.
+
+Apply migration 0006 with `pnpm db:migrate` before starting. Existing Python/model setup is reused. See [the v2 architecture](docs/V2-ARCHITECTURE.md) for the current pipeline and boundaries. The original phase-by-phase studio documentation below describes preserved legacy routes; it no longer describes the workspace entry screen.
 
 ## Local development
 

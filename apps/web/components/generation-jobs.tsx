@@ -9,6 +9,7 @@ import { cancelJob, listJobs, retryJob } from "@/lib/jobs";
 import { projectError } from "@/lib/projects";
 
 const names = {
+  explanation: "Video explanation",
   plan: "Topic outline",
   storyboard: "Storyboard",
   voiceover: "Narration",

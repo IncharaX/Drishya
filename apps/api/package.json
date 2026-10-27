@@ -11,7 +11,10 @@
     "db:check": "tsx --env-file=.env src/check-db.ts",
     "test:auth": "tsx --env-file=.env scripts/smoke-auth.ts",
     "test:speech": "tsx --env-file=.env scripts/smoke-speech.ts",
-    "test:jobs": "tsx --env-file=../../.env.offline scripts/smoke-jobs.ts"
+    "test:jobs": "tsx --env-file=../../.env.offline scripts/smoke-jobs.ts",
+    "test:explanation:rules": "tsx --env-file=.env scripts/check-explanation-rules.ts",
+    "test:explanation:state": "tsx --env-file=../../.env.offline scripts/check-explanation-state.ts",
+    "test:explanation": "tsx --env-file=.env scripts/smoke-explanation.ts"
   },
   "dependencies": {
     "@drishya/ai": "workspace:*",
@@ -31,7 +34,11 @@
     "playwright-core": "1.64.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@drishya/motion": "workspace:*",
+    "@remotion/renderer": "4.0.539",
+    "@remotion/bundler": "4.0.539",
+    "remotion": "4.0.539"
   },
   "devDependencies": {
     "@types/express": "5.0.6",

@@ -1,5 +1,7 @@
 # Drishya architecture and implementation plan
 
+The chat-first redesign supersedes the original workflow below. Its current architecture and implementation phases are documented in [V2-ARCHITECTURE.md](V2-ARCHITECTURE.md). The earlier studio remains available for saved legacy projects.
+
 ## Architecture
 
 ### Product flow

@@ -19,6 +19,7 @@ import {
   saveOutline,
 } from "./service";
 
+import { chatRouter } from "../explanations/routes";
 import { libraryRouter } from "../library/routes";
 import { jobsRouter } from "../jobs/routes";
 
@@ -38,6 +39,7 @@ projectRouter.use(async (req, res, next) => {
   next();
 });
 projectRouter.use("/jobs", jobsRouter);
+projectRouter.use("/chats", chatRouter);
 projectRouter.use("/library", libraryRouter);
 projectRouter.get("/", async (_req, res) => {
   res.json(await listProjects(res.locals.userId));

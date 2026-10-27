@@ -9,5 +9,10 @@ export function createDatabase(connectionString: string) {
     connectionTimeoutMillis: 10_000,
     query_timeout: 20_000,
   });
+  pool.on("error", () => {
+    console.warn(
+      "A database connection closed. The next request will reconnect; saved jobs are preserved.",
+    );
+  });
   return { db: drizzle(pool, { schema }), pool };
 }
