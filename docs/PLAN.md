@@ -14,15 +14,15 @@ Each chapter teaches one bounded learning objective in a 30–90 second video. T
 apps/
   web/                 Next.js frontend
   api/                 Node.js/Express API and Better Auth
-  worker/              Durable generation and rendering jobs (later)
+  worker/              Durable generation and rendering jobs
 services/
   inference/           Local Python speech service and offline voice registry
 packages/
   ui/                  Shared shadcn components and Medvai theme
   db/                  Drizzle schema, PostgreSQL client and migrations
   contracts/           Shared Zod request/response and scene schemas
-  ai/                  Model/provider adapters (later)
-  renderer/            Authored scene templates; audio-driven timeline later
+  ai/                  Local Qwen model/provider adapters
+  renderer/            Authored scene templates and shared audio-driven timeline
   storage/             Local/S3 artifact storage adapters (later)
 ```
 
@@ -83,7 +83,7 @@ Generation returns a job ID immediately. Persist stage transitions and outputs:
 
 `queued → planning → localizing → synthesizing → fitting → rendering → complete`
 
-Jobs also support failure and cancellation. Retries resume from valid persisted artifacts. Local execution initially limits heavy jobs to one at a time; durable queueing and independently scalable workers follow later.
+Jobs also support failure and cancellation. Retries resume from valid persisted artifacts. Local execution initially limits heavy jobs to one at a time; durable PostgreSQL queueing and a separate worker are implemented; horizontal inference scaling is a later deployment concern.
 
 Cache keys include content, language/script, provider, model revision, voice, speed/style, normalization version and all effective generation settings. Editing a scene invalidates affected downstream artifacts without regenerating unchanged chapters.
 
@@ -114,7 +114,7 @@ Each chapter export records its lesson version, language, model/voice revisions,
 
 **Deliverable:** “Python” produces an editable outline; a narrow question produces one focused chapter. A selected chapter is ready for scripting.
 
-**Implementation status:** Implemented. The provider is configured for local `qwen3:8b`; projects, ordered chapters and selection persist through Drizzle. Planning runs one request at a time in the API process, with persisted progress and explicit retry after interruption. Testing is handled by the user.
+**Implementation status:** Implemented. The provider is configured for local `qwen3:8b`; projects, ordered chapters and selection persist through Drizzle. Planning now runs through the Phase 5 durable worker queue, with persisted progress, cancellation and bounded retry after interruption. Testing is handled by the user.
 
 ### Phase 2 — Script and visual storyboard
 
@@ -133,13 +133,13 @@ Each chapter export records its lesson version, language, model/voice revisions,
 
 - Add a local Python speech service and provider registry.
 - Reuse the existing AI4Bharat Indic Parler environment with one persistent MPS model for English, Hindi, Kannada and Telugu.
-- Download and package required weights, tokenizers, phonemizers and voice assets.
+- Reuse the downloaded model and tokenizers without reinstalling or modifying the working Python environment.
 - Generate per-scene WAV files and cache them with complete generation settings.
 - Localize narration and display text while protecting technical tokens.
 - Bundle appropriate fonts and handle text shaping, wrapping and RTL where applicable.
-- Start with English plus two Indian languages; keep the language registry extensible.
+- Support English, Hindi, Kannada and Telugu; keep the language registry extensible.
 
-**Deliverable:** Offline narration and localized scene text for the three initial languages.
+**Deliverable:** Offline narration and localized scene text for the four initial languages.
 
 **Implementation status:** Reworked around the existing Python 3.11 AI4Bharat Indic Parler environment, persistent MPS inference, offline cache-only loading, and four languages (English, Hindi, Kannada, Telugu). The Node TTS boundary and saved per-scene WAV pipeline remain intact. Speaker profiles and generation configuration match the known-working test.py. Localized editing, matching fonts, provider-aware caching and authenticated playback are included. Four-language integration verification is available through `pnpm --dir apps/api test:speech`. Audio duration fitting and synchronized video remain Phase 4.
 
@@ -155,6 +155,9 @@ Each chapter export records its lesson version, language, model/voice revisions,
 
 **Deliverable:** A selected chapter generates a playable, downloadable 30–90 second narrated video.
 
+**Implementation status:** Implemented the shared audio-driven chapter player and video frame renderer, FFprobe-measured language-specific timelines, progressive highlights, frame-quantized transitions and estimated chunk captions. The local Chrome/FFmpeg renderer exports 720p 24 fps H.264/AAC MP4 plus VTT/SRT. Oversized narration can create a separate shortened take with at most two Qwen/TTS attempts; audio is never truncated or accelerated. Exports are owned, versioned and persisted with progress and failure/restart handling. Migration 0004 adds video export records. TypeScript checks and API compilation passed; the previously failed Kannada take was successfully rendered and media-profile verified after the React runtime fix. Durable workers and resume/retry UI are implemented in Phase 5.
+
+
 ### Phase 5 — Durable generation and lesson library
 
 - Move long-running work into a separate worker with persistent job state.
@@ -165,6 +168,9 @@ Each chapter export records its lesson version, language, model/voice revisions,
 - Complete the local PostgreSQL/auth profile and package dependencies for disconnected use.
 
 **Deliverable:** Reliable generation that resumes after failure and a library of versioned lessons.
+
+**Implementation status:** Implemented atomic resource/job enqueueing, a separate worker, one heavy job at a time, bounded retries, cancellation and leased restart recovery with fencing against late writes. Migration 0005 adds jobs/heartbeats and adopts interrupted pre-worker records. Saved localizations, unchanged translation fields, cached scene WAVs and verified completed videos are reused; partial video frames are regenerated. The studio/library show progress, failures and retry/cancel actions. The paginated library links exact lesson/take versions and downloads; the built-in example is explicitly labelled. A dedicated local PostgreSQL cluster, separate credentials-auth profile and offline startup/check scripts are prepared without modifying the working TTS environment or switching the running Neon profile. TypeScript/API-worker builds, focused local queue/auth checks and offline Node dependency installation passed. Full UI/model testing remains with the user.
+
 
 ### Phase 6 — Course generation and chapter merging
 

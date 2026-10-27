@@ -13,3 +13,4 @@ data/
 **/.venv/
 **/__pycache__/
 *.pyc
+!infra/offline.env.example

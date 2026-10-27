@@ -26,6 +26,8 @@ import {
   sceneAudioUrl,
 } from "@/lib/voiceovers";
 
+import { VideoPanel } from "./video-panel";
+
 const languages = {
   en: "English",
   hi: "Hindi · हिन्दी",
@@ -42,12 +44,14 @@ export function VoiceoverPanel({
   chapterId,
   lesson,
   sourceDirty,
+  initialTakeId,
   onDirty,
 }: {
   userId: string;
   projectId: string;
   chapterId: string;
   lesson: LessonDetail;
+  initialTakeId?: string;
   sourceDirty: boolean;
   onDirty: (value: boolean) => void;
 }) {
@@ -58,7 +62,7 @@ export function VoiceoverPanel({
   );
   const [voiceId, setVoiceId] = useState("");
   const speed = 1 as const;
-  const [takeId, setTakeId] = useState<string | null>(null);
+  const [takeId, setTakeId] = useState<string | null>(initialTakeId ?? null);
   const [dirty, setDirty] = useState(false);
   const voices = useQuery({
     queryKey: ["speech-voices", "indic-parler-v1", userId],
@@ -72,7 +76,9 @@ export function VoiceoverPanel({
     refetchInterval: (query) =>
       query.state.data?.takes.some(
         (item) =>
-          item.status === "localizing" || item.status === "synthesizing",
+          item.status === "localizing" ||
+          item.status === "fitting" ||
+          item.status === "synthesizing",
       )
         ? 2000
         : false,
@@ -81,7 +87,10 @@ export function VoiceoverPanel({
   const selected = takes.data?.takes.find((item) => item.id === selectedId);
   const busy =
     takes.data?.takes.some(
-      (item) => item.status === "localizing" || item.status === "synthesizing",
+      (item) =>
+        item.status === "localizing" ||
+        item.status === "fitting" ||
+        item.status === "synthesizing",
     ) ?? false;
   useEffect(() => {
     if (!takeId && selectedId) setTakeId(selectedId);
@@ -308,8 +317,27 @@ export function VoiceoverPanel({
             </select>
           </div>
         )}
+        {selected?.status === "ready" && selected.content && (
+          <VideoPanel
+            key={`video-${selected.id}`}
+            userId={userId}
+            projectId={projectId}
+            chapterId={chapterId}
+            lesson={lesson}
+            take={selected}
+            locked={
+              dirty ||
+              sourceDirty ||
+              lesson.isStale ||
+              busy ||
+              !selected.voiceId.startsWith("indic-parler-")
+            }
+            onTake={accept}
+          />
+        )}
         {selected &&
           (selected.status === "localizing" ||
+            selected.status === "fitting" ||
             selected.status === "synthesizing") && (
             <p
               role="status"
@@ -318,7 +346,9 @@ export function VoiceoverPanel({
               <LoaderCircle className="size-4 animate-spin" />
               {selected.status === "localizing"
                 ? "Translating narration and display text with local Qwen…"
-                : `Synthesizing scene ${Math.min(selected.completedScenes + 1, selected.totalScenes)} of ${selected.totalScenes}…`}
+                : selected.status === "fitting"
+                  ? "Shortening narration with local Qwen before generating new audio…"
+                  : `Synthesizing scene ${Math.min(selected.completedScenes + 1, selected.totalScenes)} of ${selected.totalScenes}…`}
             </p>
           )}
         {selected?.status === "failed" && (
@@ -352,10 +382,10 @@ export function VoiceoverPanel({
         )}
         <p className="text-xs leading-relaxed text-ink-muted">
           Review pronunciation and translation before teaching. The measured
-          audio duration may exceed your target; fitting the timeline and
-          exporting MP4 are Phase 4. All four voices use locally cached
-          AI4Bharat Indic Parler with the existing Python environment and
-          natural teaching descriptions.
+          audio duration includes narration only; the video preview adds reading
+          pauses and transitions. All four voices use locally cached AI4Bharat
+          Indic Parler with the existing Python environment and natural teaching
+          descriptions.
         </p>
       </div>
     </WindowPanel>

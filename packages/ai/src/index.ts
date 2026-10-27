@@ -1,4 +1,5 @@
+export { OllamaNarrationFitter } from "./fitting";
+export { LOCALIZATION_VERSION, OllamaLocalizer } from "./localization";
 export * from "./ollama";
-export { OllamaStoryteller } from "./storyboard";
 export { referencesFor } from "./references";
-export { OllamaLocalizer, LOCALIZATION_VERSION } from "./localization";
+export { OllamaStoryteller } from "./storyboard";

@@ -84,7 +84,7 @@ export const voiceoverSchema = z.object({
   voiceId: z.string(),
   voiceLabel: z.string(),
   speed: z.number(),
-  status: z.enum(["localizing", "synthesizing", "ready", "failed"]),
+  status: z.enum(["localizing", "fitting", "synthesizing", "ready", "failed"]),
   origin: z.enum(["generated", "edited"]),
   content: localizedStoryboardSchema.nullable(),
   audio: z.array(sceneAudioSchema).max(6),

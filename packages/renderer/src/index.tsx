@@ -1,7 +1,12 @@
 "use client";
 
-import type { Scene } from "@drishya/contracts";
-import { useId } from "react";
+import {
+  timelinePosition,
+  type Timeline,
+  type LocalizedStoryboard,
+  type Scene,
+} from "@drishya/contracts";
+import React, { useId } from "react";
 
 function wrap(text: string, length: number, max = 3): string[] {
   const lines: string[] = [];
@@ -315,7 +320,10 @@ export function SceneCanvas({
                     width="1128"
                     height="26"
                     fill={
-                      scene.focusLines.includes(i + 1)
+                      scene.focusLines.includes(i + 1) &&
+                      t >=
+                        scene.focusLines.indexOf(i + 1) /
+                          scene.focusLines.length
                         ? "#fdf4d8"
                         : "transparent"
                     }
@@ -353,5 +361,87 @@ export function SceneCanvas({
         )}
       </g>
     </svg>
+  );
+}
+
+// Both the audio-driven browser player and the export browser use this exact frame.
+export function VideoFrame({
+  content,
+  timeline,
+  time,
+  locale,
+}: {
+  content: LocalizedStoryboard;
+  timeline: Timeline;
+  time: number;
+  locale: "en" | "hi" | "kn" | "te" | "mr";
+}) {
+  const position = timelinePosition(timeline, time);
+  const scene = content.scenes[position.index];
+  if (!scene) return null;
+  return (
+    <div
+      style={{
+        width: 1280,
+        height: 720,
+        position: "relative",
+        background: "#fffdf8",
+        overflow: "hidden",
+        color: "#1a1a1a",
+      }}
+      lang={locale}
+    >
+      <div
+        style={{
+          width: 1120,
+          height: 630,
+          margin: "0 auto",
+          opacity: Math.min(
+            1,
+            Math.max(0, (time - position.scene.start) / 0.25),
+            Math.max(0, (position.scene.end - time) / 0.25),
+          ),
+        }}
+      >
+        <SceneCanvas
+          scene={scene}
+          progress={position.progress}
+          locale={locale}
+        />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          width: "100%",
+          height: 84,
+          padding: "8px 48px",
+          boxSizing: "border-box",
+          display: "grid",
+          placeItems: "center",
+          textAlign: "center",
+          background: "#1a1a1a",
+          color: "#fffdf8",
+          fontSize: 25,
+          lineHeight: 1.35,
+          fontFamily:
+            "Inter, Noto Sans Devanagari, Noto Sans Kannada, Noto Sans Telugu, sans-serif",
+        }}
+        aria-live="off"
+      >
+        {position.caption}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 632,
+          height: 3,
+          width: `${Math.min(1, Math.max(0, time / timeline.duration)) * 100}%`,
+          background: "#f07289",
+        }}
+      />
+    </div>
   );
 }

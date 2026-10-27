@@ -6,8 +6,34 @@
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
       "env": ["API_URL"]
     },
-    "dev": { "cache": false, "persistent": true },
-    "start": { "cache": false, "persistent": true },
-    "typecheck": { "dependsOn": ["^typecheck"] }
-  }
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    }
+  },
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "BETTER_AUTH_SECRET",
+    "BETTER_AUTH_URL",
+    "APP_PROFILE",
+    "MEDIA_ROOT",
+    "DRISHYA_DATA_DIR",
+    "API_URL",
+    "NEXT_TELEMETRY_DISABLED",
+    "INFERENCE_URL",
+    "INFERENCE_SECRET",
+    "OLLAMA_BASE_URL",
+    "OLLAMA_MODEL",
+    "TTS_PYTHON",
+    "CHROME_PATH",
+    "FFMPEG_PATH",
+    "FFPROBE_PATH"
+  ]
 }

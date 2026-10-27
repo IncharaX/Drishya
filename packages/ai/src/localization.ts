@@ -96,6 +96,7 @@ export class OllamaLocalizer extends OllamaPlanner {
     content: Storyboard,
     language: "hi" | "kn" | "te",
     signal: AbortSignal,
+    reuse?: { canonical: Storyboard; localized: LocalizedStoryboard },
   ): Promise<LocalizedStoryboard> {
     const locale = {
       hi: { name: "Hindi", script: "Devanagari", pattern: /[\u0900-\u097f]/u },
@@ -115,6 +116,36 @@ export class OllamaLocalizer extends OllamaPlanner {
       ...field,
       ...protect(field.text, identifiers),
     }));
+    const oldSource = new Map(
+      reuse
+        ? fields(reuse.canonical).map((field) => [field.key, field.text])
+        : [],
+    );
+    const oldTarget = new Map(
+      reuse
+        ? fields(reuse.localized).map((field) => [field.key, field.text])
+        : [],
+    );
+    const codeOf = (story: Storyboard) =>
+      story.scenes
+        .filter((scene) => scene.type === "code")
+        .map((scene) => scene.code)
+        .join("\n");
+    const canReuse =
+      !!reuse &&
+      content.learningObjective === reuse.canonical.learningObjective &&
+      codeOf(content) === codeOf(reuse.canonical);
+    const cached = new Map(
+      source
+        .filter(
+          (field) =>
+            canReuse &&
+            oldSource.get(field.key) === field.text &&
+            oldTarget.has(field.key),
+        )
+        .map((field) => [field.key, oldTarget.get(field.key)!]),
+    );
+    const pending = source.filter((field) => !cached.has(field.key));
     const messages = [
       {
         role: "system",
@@ -123,32 +154,38 @@ export class OllamaLocalizer extends OllamaPlanner {
       {
         role: "user",
         content: JSON.stringify({
-          fields: source.map(({ key, masked }) => ({ key, text: masked })),
+          fields: pending.map(({ key, masked }) => ({ key, text: masked })),
         }),
       },
     ];
     for (let attempt = 0; attempt < 2; attempt++) {
-      const text = await this.generate(
-        messages,
-        signal,
-        z.toJSONSchema(translationSchema),
-        6000,
-      );
+      const text = pending.length
+        ? await this.generate(
+            messages,
+            signal,
+            z.toJSONSchema(translationSchema),
+            6000,
+          )
+        : JSON.stringify({ translations: [] });
       try {
         const translated = translationSchema.parse(
           JSON.parse(text),
         ).translations;
         const map = new Map(translated.map((item) => [item.key, item.text]));
         if (
-          translated.length !== source.length ||
-          map.size !== source.length ||
+          translated.length !== pending.length ||
+          map.size !== pending.length ||
           translated.some(
-            (item) => !source.some((field) => field.key === item.key),
+            (item) => !pending.some((field) => field.key === item.key),
           )
         )
           throw new Error("Return exactly the original keys.");
         const result = structuredClone(content) as LocalizedStoryboard;
         for (const field of source) {
+          if (cached.has(field.key)) {
+            replaceField(result, field.key, cached.get(field.key)!);
+            continue;
+          }
           let localized = map.get(field.key) ?? "";
           for (const [key, token] of field.tokens) {
             if (localized.split(key).length !== 2)

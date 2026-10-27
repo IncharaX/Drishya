@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useStore } from "zustand";
+import { GenerationJobs } from "./generation-jobs";
 import { AccountMenu } from "@/components/account-menu";
 import { Brand } from "@/components/brand";
 import { PlanningForm } from "@/components/planning-form";
@@ -156,6 +157,9 @@ export function Workspace({ userId }: { userId: string }) {
               <Clapperboard className="size-3.5" />
               30–90s per chapter
             </span>
+            <Link href="/workspace/library" className="text-sm underline">
+              Lesson library
+            </Link>
             <Button
               type="button"
               variant="outline"
@@ -170,6 +174,10 @@ export function Workspace({ userId }: { userId: string }) {
         </div>
         <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.2fr)]">
           <div className="space-y-6">
+            <GenerationJobs
+              userId={userId}
+              projectId={activeProjectId ?? undefined}
+            />
             <PlanningForm
               store={store}
               pending={create.isPending}

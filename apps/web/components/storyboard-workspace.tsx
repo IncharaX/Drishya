@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Clapperboard, LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { GenerationJobs } from "./generation-jobs";
 import { AccountMenu } from "@/components/account-menu";
 import { Brand } from "@/components/brand";
 import { StoryboardEditor } from "@/components/storyboard-editor";
@@ -22,13 +23,19 @@ export function StoryboardWorkspace({
   userId,
   projectId,
   chapterId,
+  initialVersionId,
+  initialTakeId,
 }: {
   userId: string;
   projectId: string;
   chapterId: string;
+  initialVersionId?: string;
+  initialTakeId?: string;
 }) {
   const client = useQueryClient();
-  const [versionId, setVersionId] = useState<string | null>(null);
+  const [versionId, setVersionId] = useState<string | null>(
+    initialVersionId ?? null,
+  );
   const [dirty, setDirty] = useState(false);
   const [voiceDirty, setVoiceDirty] = useState(false);
   const [notice, setNotice] = useState("");
@@ -286,6 +293,7 @@ export function StoryboardWorkspace({
             </div>
           </WindowPanel>
         )}
+        <GenerationJobs userId={userId} projectId={projectId} />
         {lesson.isError && (
           <div
             role="alert"
@@ -379,14 +387,14 @@ export function StoryboardWorkspace({
               projectId={projectId}
               chapterId={chapterId}
               lesson={lesson.data}
+              initialTakeId={initialTakeId}
               sourceDirty={dirty}
               onDirty={setVoiceDirty}
             />
           </>
         )}
         <footer className="border-t border-border pt-5 text-xs text-ink-muted">
-          Drishya · Storyboards and local narration. Video export follows in
-          Phase 4.
+          Drishya · Storyboards, local narration and chapter video export.
         </footer>
       </main>
     </div>

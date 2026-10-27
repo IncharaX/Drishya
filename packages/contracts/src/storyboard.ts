@@ -151,15 +151,16 @@ export function storyboardIssues(
       const ids = new Set(scene.nodes.map((node) => node.id));
       if (ids.size !== scene.nodes.length)
         issues.push(`${scene.id}: node IDs must be unique.`);
-      if (
-        scene.edges.some(
-          (edge) =>
-            !ids.has(edge.from) || !ids.has(edge.to) || edge.from === edge.to,
-        )
-      )
-        issues.push(
-          `${scene.id}: every arrow must connect two different existing nodes.`,
-        );
+      for (const edge of scene.edges) {
+        if (!ids.has(edge.from) || !ids.has(edge.to))
+          issues.push(
+            `${scene.id}: arrow ${edge.from} → ${edge.to} has an unknown endpoint. Allowed node IDs: ${[...ids].join(", ")}.`,
+          );
+        else if (edge.from === edge.to)
+          issues.push(
+            `${scene.id}: remove self-arrow ${edge.from} → ${edge.to}; connect distinct nodes.`,
+          );
+      }
       if (
         new Set(scene.edges.map((edge) => `${edge.from}:${edge.to}`)).size !==
         scene.edges.length

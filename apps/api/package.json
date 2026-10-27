@@ -10,21 +10,34 @@
     "typecheck": "tsc --noEmit",
     "db:check": "tsx --env-file=.env src/check-db.ts",
     "test:auth": "tsx --env-file=.env scripts/smoke-auth.ts",
-    "test:speech": "tsx --env-file=.env scripts/smoke-speech.ts"
+    "test:speech": "tsx --env-file=.env scripts/smoke-speech.ts",
+    "test:jobs": "tsx --env-file=../../.env.offline scripts/smoke-jobs.ts"
   },
   "dependencies": {
+    "@drishya/ai": "workspace:*",
     "@drishya/contracts": "workspace:*",
     "@drishya/db": "workspace:*",
+    "@drishya/renderer": "workspace:*",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/noto-sans-devanagari": "5.3.0",
+    "@fontsource/noto-sans-kannada": "5.3.0",
+    "@fontsource/noto-sans-telugu": "5.3.0",
     "better-auth": "1.7.13",
+    "drizzle-orm": "0.45.4",
     "express": "5.3.0",
     "helmet": "8.3.0",
-    "zod": "4.6.7",
-    "drizzle-orm": "0.45.4",
-    "@drishya/ai": "workspace:*"
+    "playwright-core": "1.64.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
     "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "tsup": "9.0.0",
     "tsx": "4.23.15",
     "typescript": "7.0.2"

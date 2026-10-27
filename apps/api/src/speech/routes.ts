@@ -8,13 +8,17 @@ import { z } from "zod";
 import { env } from "../env";
 import { HttpError } from "../http-error";
 import {
+  fitVoiceover,
   getVoiceover,
   listVoiceovers,
   reviseVoiceover,
   startVoiceover,
 } from "./service";
 
+import { videoRouter } from "../video/routes";
+
 export const voiceoverRouter = Router({ mergeParams: true });
+voiceoverRouter.use("/:takeId/exports", videoRouter);
 const ids = (params: Record<string, unknown>) =>
   z
     .object({ id: z.uuid(), chapterId: z.uuid(), versionId: z.uuid() })
@@ -89,4 +93,20 @@ voiceoverRouter.get("/:takeId/audio/:sceneId", async (req, res, next) => {
         );
     },
   );
+});
+
+voiceoverRouter.post("/:takeId/fit", async (req, res) => {
+  const { id, chapterId, versionId } = ids(req.params);
+  z.object({}).strict().parse(req.body);
+  res
+    .status(202)
+    .json(
+      await fitVoiceover(
+        res.locals.userId,
+        id,
+        chapterId,
+        versionId,
+        z.uuid().parse(req.params.takeId),
+      ),
+    );
 });

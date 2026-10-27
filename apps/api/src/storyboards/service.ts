@@ -13,15 +13,14 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../database";
 import { env } from "../env";
 import { HttpError } from "../http-error";
-import { reserveModel } from "../model-gate";
+import { enqueue } from "../jobs/queue";
+import { checkpoint, jobFence } from "../jobs/context";
 
 const provider = new OllamaStoryteller({
   baseURL: env.OLLAMA_BASE_URL,
   model: env.OLLAMA_MODEL,
   timeoutMs: env.OLLAMA_TIMEOUT_MS,
 });
-let controller: AbortController | null = null;
-let activeRun: Promise<void> | null = null;
 function fingerprint(input: LessonInput) {
   return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
@@ -99,73 +98,68 @@ export async function generateStoryboard(
   projectId: string,
   chapterId: string,
 ) {
-  const release = reserveModel();
-  try {
-    const current = await context(userId, projectId, chapterId);
-    if (current.project.status !== "ready")
-      throw new HttpError(409, "Finish planning this project first.");
-    if (!current.chapter.isSelected)
+  const current = await context(userId, projectId, chapterId);
+  if (current.project.status !== "ready")
+    throw new HttpError(409, "Finish planning this project first.");
+  if (!current.chapter.isSelected)
+    throw new HttpError(
+      409,
+      "Select and save this chapter in the outline before generating its script.",
+    );
+  const references = referencesFor(current.input);
+  const record = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ revision: project.revision })
+      .from(project)
+      .where(and(eq(project.id, projectId), eq(project.userId, userId)))
+      .for("update");
+    if (!locked || locked.revision !== current.project.revision)
       throw new HttpError(
         409,
-        "Select and save this chapter in the outline before generating its script.",
+        "The outline changed. Reopen this chapter before generating.",
       );
-    const references = referencesFor(current.input);
-    const record = await db.transaction(async (tx) => {
-      const [locked] = await tx
-        .select({ revision: project.revision })
-        .from(project)
-        .where(and(eq(project.id, projectId), eq(project.userId, userId)))
-        .for("update");
-      if (!locked || locked.revision !== current.project.revision)
-        throw new HttpError(
-          409,
-          "The outline changed. Reopen this chapter before generating.",
-        );
-      await tx
-        .select({ id: chapter.id })
-        .from(chapter)
-        .where(eq(chapter.id, chapterId))
-        .for("update");
-      const [last] = await tx
-        .select({ version: lessonVersion.version })
-        .from(lessonVersion)
-        .where(eq(lessonVersion.chapterId, chapterId))
-        .orderBy(desc(lessonVersion.version))
-        .limit(1);
-      const [created] = await tx
-        .insert(lessonVersion)
-        .values({
-          chapterId,
-          version: (last?.version ?? 0) + 1,
-          origin: "generated",
-          status: "drafting",
-          input: current.input,
-          inputFingerprint: fingerprint(current.input),
-          references,
-          model: provider.model,
-        })
-        .returning();
-      if (!created)
-        throw new HttpError(500, "Could not create a storyboard version.");
-      return created;
+    await tx
+      .select({ id: chapter.id })
+      .from(chapter)
+      .where(eq(chapter.id, chapterId))
+      .for("update");
+    const [last] = await tx
+      .select({ version: lessonVersion.version })
+      .from(lessonVersion)
+      .where(eq(lessonVersion.chapterId, chapterId))
+      .orderBy(desc(lessonVersion.version))
+      .limit(1);
+    const [created] = await tx
+      .insert(lessonVersion)
+      .values({
+        chapterId,
+        version: (last?.version ?? 0) + 1,
+        origin: "generated",
+        status: "drafting",
+        input: current.input,
+        inputFingerprint: fingerprint(current.input),
+        references,
+        model: provider.model,
+      })
+      .returning();
+    if (!created)
+      throw new HttpError(500, "Could not create a storyboard version.");
+    await enqueue(tx, {
+      userId,
+      projectId,
+      chapterId,
+      kind: "storyboard",
+      resourceId: created.id,
     });
-    controller = new AbortController();
-    activeRun = run(record, controller.signal).finally(() => {
-      release();
-      activeRun = null;
-      controller = null;
-    });
-    return {
-      ...metadata(record),
-      input: record.input,
-      content: null,
-      references,
-      isStale: false,
-    };
-  } catch (error) {
-    release();
-    throw error;
-  }
+    return created;
+  });
+  return {
+    ...metadata(record),
+    input: record.input,
+    content: null,
+    references,
+    isStale: false,
+  };
 }
 
 async function run(
@@ -176,21 +170,23 @@ async function run(
     const content = await provider.storyboard(record.input, record.references, {
       signal,
       onRepair: async () => {
+        await checkpoint("Repairing storyboard", 40);
         await db
           .update(lessonVersion)
           .set({ status: "repairing" })
-          .where(eq(lessonVersion.id, record.id));
+          .where(and(eq(lessonVersion.id, record.id), jobFence()));
       },
     });
     if (signal.aborted)
       throw new PlannerError(
         "INTERRUPTED",
-        "The API restarted. Generate a new storyboard version to continue.",
+        "Storyboard generation was interrupted. The worker can retry the saved inputs.",
       );
+    await checkpoint("Saving storyboard", 90);
     await db
       .update(lessonVersion)
       .set({ content, status: "ready" })
-      .where(eq(lessonVersion.id, record.id));
+      .where(and(eq(lessonVersion.id, record.id), jobFence()));
   } catch (error) {
     try {
       await db
@@ -202,12 +198,13 @@ async function run(
               ? error.message
               : "The storyboard could not be saved. Check the database connection and generate a new version.",
         })
-        .where(eq(lessonVersion.id, record.id));
+        .where(and(eq(lessonVersion.id, record.id), jobFence()));
     } catch {
       console.error(
         `Unable to persist storyboard failure for version ${record.id}.`,
       );
     }
+    throw error;
   }
 }
 
@@ -293,17 +290,18 @@ export async function reviseStoryboard(
   });
   return getVersion(userId, projectId, chapterId, id);
 }
-export async function recoverInterruptedStoryboards() {
+
+export async function executeStoryboard(id: string, signal: AbortSignal) {
+  const [record] = await db
+    .select()
+    .from(lessonVersion)
+    .where(eq(lessonVersion.id, id));
+  if (!record) throw new HttpError(404, "Storyboard no longer exists.");
+  if (record.status === "ready") return;
+  await checkpoint("Writing storyboard", 10);
   await db
     .update(lessonVersion)
-    .set({
-      status: "failed",
-      errorMessage:
-        "The API restarted while drafting. Generate a new version to continue.",
-    })
-    .where(inArray(lessonVersion.status, ["drafting", "repairing"]));
-}
-export async function stopStoryboards() {
-  controller?.abort();
-  await activeRun;
+    .set({ status: "drafting", errorMessage: null })
+    .where(and(eq(lessonVersion.id, id), jobFence()));
+  await run(record, signal);
 }

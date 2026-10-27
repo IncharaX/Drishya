@@ -6,7 +6,11 @@ import type {
   LessonReference,
   Storyboard,
 } from "@drishya/contracts";
-import type { LocalizedStoryboard, SceneAudio } from "@drishya/contracts";
+import type {
+  LocalizedStoryboard,
+  SceneAudio,
+  Timeline,
+} from "@drishya/contracts";
 import {
   boolean,
   index,
@@ -232,7 +236,7 @@ export const voiceover = drishya.table(
     voiceLabel: text("voice_label").notNull(),
     speed: text("speed").notNull(),
     status: text("status", {
-      enum: ["localizing", "synthesizing", "ready", "failed"],
+      enum: ["localizing", "fitting", "synthesizing", "ready", "failed"],
     }).notNull(),
     origin: text("origin", { enum: ["generated", "edited"] }).notNull(),
     content: jsonb("content").$type<LocalizedStoryboard>(),
@@ -251,3 +255,100 @@ export const voiceover = drishya.table(
     ),
   ],
 );
+
+export const videoExport = drishya.table(
+  "video_export",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    voiceoverId: uuid("voiceover_id")
+      .notNull()
+      .references(() => voiceover.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: ["preparing", "rendering", "ready", "failed"],
+    }).notNull(),
+    progress: integer("progress").notNull().default(0),
+    timeline: jsonb("timeline").$type<Timeline>(),
+    errorMessage: text("error_message"),
+    profile: text("profile").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("video_export_take_created_idx").on(
+      table.voiceoverId,
+      table.createdAt,
+    ),
+  ],
+);
+
+// Resource creation and enqueue happen in the same transaction. Payloads are private.
+export const generationJob = drishya.table(
+  "generation_job",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    chapterId: uuid("chapter_id").references(() => chapter.id, {
+      onDelete: "cascade",
+    }),
+    kind: text("kind", {
+      enum: ["plan", "storyboard", "voiceover", "video"],
+    }).notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    payload: jsonb("payload")
+      .$type<{
+        fitting?: {
+          target: number;
+          duration: number;
+          attempts?: number;
+          pendingSynthesis?: boolean;
+        };
+      }>()
+      .notNull()
+      .default({}),
+    status: text("status", {
+      enum: [
+        "queued",
+        "running",
+        "retrying",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+    })
+      .notNull()
+      .default("queued"),
+    stage: text("stage").notNull().default("Waiting for worker"),
+    progress: integer("progress").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    lockToken: uuid("lock_token"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    runAfter: timestamp("run_after", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("generation_job_owner_created_idx").on(t.userId, t.createdAt),
+    index("generation_job_queue_idx").on(t.status, t.runAfter),
+    index("generation_job_resource_idx").on(t.kind, t.resourceId),
+  ],
+);
+
+export const workerHeartbeat = drishya.table("worker_heartbeat", {
+  id: text("id").primaryKey(),
+  seenAt: timestamp("seen_at", { withTimezone: true }).notNull(),
+});

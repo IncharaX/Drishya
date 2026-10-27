@@ -33,7 +33,8 @@ The web app proxies `/api/*` to the API using the server-only `API_URL` environm
 ```text
 apps/
   web/           Next.js App Router, React Query, Axios, Zustand
-  api/           Express, Better Auth, database connection
+  api/           Express, Better Auth, database connection and job endpoints
+  worker/        Independent persistent generation worker
 services/
   inference/     Persistent local Indic Parler speech service and WAV cache
 packages/
@@ -92,7 +93,7 @@ OLLAMA_TIMEOUT_MS=180000
 
 The provider requests schema-constrained JSON, validates cross-field rules and allows one repair attempt. Each attempt has the configured timeout. No hosted AI fallback is used. Duration estimates are provisional; actual narration timing comes in a later phase.
 
-Planning returns a persisted project immediately and runs in the API process, with one local generation at a time. The frontend polls for progress. Concurrent planning requests receive an actionable busy response. The `project` and `chapter` tables store owned outlines, ordered chapters, prerequisites and one selected chapter. Outline saves use a revision check to avoid overwriting changes from another tab. An API restart marks interrupted work as retryable; a durable worker queue is deferred to Phase 5.
+Planning atomically saves a project and queues a job, then returns immediately. A separate worker processes one generation at a time; additional requests remain queued. The frontend polls for progress. The `project` and `chapter` tables store owned outlines, ordered chapters, prerequisites and one selected chapter. Outline saves use a revision check to avoid overwriting changes from another tab. API restarts do not interrupt the worker. Worker restarts recover uncompleted jobs through leased database records.
 
 API routes (all require a session; writes require the configured frontend Origin):
 
@@ -125,6 +126,8 @@ Curated reference paraphrases for Python control flow and the water cycle are bu
 
 All routes inherit project authentication and origin checks, and validate project/chapter ownership. Apply the new migration before restarting the API. No tests, builds, browser checks or sample generations were run for Phase 2, per the user's testing preference.
 
+The storyboard provider enforces a per-scene word budget in its model-facing schema, then converts the result into normal narration strings. Saved objectives are attached by the application. Diagram relationships are generated separately with endpoints restricted to the actual node IDs; self-arrows are excluded by the schema. Validation failures include the specific rule and invalid endpoint rather than a generic suggestion to narrow the topic. The public scene/editor/audio contract is unchanged.
+
 ## Offline voiceover and localization
 
 Phase 3 is available below a ready storyboard in **Voiceover & localization**. Choose English, Hindi, Kannada or Telugu, select an available local voice, and generate a take. Qwen translates narration and visual text for Hindi, Kannada and Telugu. Code, scene types/order/IDs, diagram connectivity, references and protected technical tokens are retained. Translation and pronunciation need human review.
@@ -139,10 +142,64 @@ Voiceover routes are nested under `/api/projects/:id/chapters/:chapterId/storybo
 
 Run `pnpm --dir apps/api test:speech` for four-language speech verification through the Node adapter, including WAV validation, one retained MPS model load and preservation of the original working setup. Translation quality still needs human review. Completely offline operation still needs local PostgreSQL instead of Neon.
 
+## Chapter player and video export
+
+Phase 4 is available inside **Voiceover & localization** after selecting a ready take. Use **Bring it together** to play/pause, seek, replay or jump to a scene. Preview combines the localized storyboard with measured audio, progressive highlights, transitions and estimated narration captions.
+
+Choose **Export MP4** for a locally rendered H.264/AAC 1280×720 video at 24 fps, stereo 48 kHz audio and browser-friendly fast-start metadata. Download the MP4 and separate UTF-8 VTT/SRT captions from the saved export. Caption timing is proportional to narration chunks; it is not word-level forced alignment. Captions are also drawn into the video for predictable Indic-script rendering.
+
+FFprobe measures the WAV files again before export. Scene boundaries include a 250 ms lead-in and at least 417 ms of tail time, quantized to whole output frames. Short chapters receive reading pauses to reach 30 seconds. Narration is never truncated or accelerated. If narration plus transitions exceeds the chapter target, **Shorten narration to fit** creates a new take using Qwen and the existing local TTS service. It makes at most two shortening/synthesis attempts, preserves scene structure, code and visual text, and asks for a smaller chapter objective if it still cannot fit. Review the wording and pronunciation of shortened takes before exporting.
+
+The renderer launches an isolated headless instance of installed Google Chrome through Playwright Core. It captures only authored templates from the shared `VideoFrame` component, with fonts embedded from local packages and network requests blocked. No generated HTML or code executes. FFmpeg encodes the captured frames and mixes the measured WAVs. No additional TTS packages, model downloads or changes to the working Python environment are required.
+
+Required local tools: `ffmpeg`, `ffprobe`, and Google Chrome. Override `FFMPEG_PATH`, `FFPROBE_PATH` or `CHROME_PATH` in `apps/api/.env` if needed. The defaults work with tools on PATH and the installed Chrome channel. These tools are already present on this Mac.
+
+Export routes live under `/api/projects/:id/chapters/:chapterId/storyboards/:versionId/voiceovers/:takeId/exports`: GET lists the latest ten exports; POST starts an export; GET `/:exportId/video.mp4`, `captions.vtt`, `captions.srt` or `manifest.json` serves an owned, ready artifact. `?download=1` requests an attachment. Every route uses the existing session, origin and nested ownership checks. Artifacts live under `data/video/<exportId>` and metadata lives in `drishya.video_export` (migration 0004).
+
+Video renders run in the separate worker alongside the durable generation queue. Progress and failures are saved; cancellation, bounded retries and lease recovery are implemented. Automatic cleanup of abandoned artifacts is deferred. Exports keep the exact selected storyboard and narration version; later edits do not rewrite old video files.
+
+Validation for this phase: TypeScript checks, API production compilation and local API startup. After fixing a missing React runtime import in the server renderer, the previously failed Kannada take was exported successfully: 46.7 seconds, 720p H.264 at 24 fps with 48 kHz stereo AAC, plus VTT/SRT captions. The renderer validates the output media profile with FFprobe. Export failures now retain the actual error and log its stack instead of suggesting disk space for every unexpected failure. Listening and broader UI testing remain with the user.
+
+Implementation references: [Playwright browser launching](https://playwright.dev/docs/api/class-browsertype), [FFmpeg encoding options](https://ffmpeg.org/ffmpeg.html), [FFmpeg concat format](https://ffmpeg.org/ffmpeg-formats.html).
+
+## Durable generation, history and offline profile
+
+`pnpm dev` now launches four independent processes: Next.js, the API, the generation worker and the existing Indic Parler service. API handlers atomically save the target record and a `drishya.generation_job` row. They do not run model inference or rendering in the API process. Apply migration 0005 before startup; its one-time adoption preserves interrupted legacy work and leaves completed lessons intact.
+
+The worker claims one heavy job at a time using a PostgreSQL transaction-level advisory lock and row locking. This works with Neon's transaction pooler. Jobs have a random lease token, a 90-second lease and a five-second heartbeat. SQL fencing prevents a stale or cancelled worker from updating lesson records. A hard-killed worker's job can be reclaimed after the lease expires. Graceful worker shutdown schedules remaining work for retry; restarting only the API leaves running jobs alone.
+
+Transient model/storage failures retry with bounded backoff, at most three worker attempts per job. Invalid model output or bad inputs fail visibly instead of retrying forever. The activity panel supports cancellation and retrying a failed/cancelled job while attempts remain. Cancelling does not delete saved versions. An already dispatched Python synthesis may finish and warm the local WAV cache; subsequent stages and worker writes stop. Shortening attempt state is persisted and retains its separate two-attempt limit across worker restarts.
+
+Recovery reuses saved localization, content-addressed WAVs and validated completed video files. Unchanged translation fields can be reused after visual/text edits when the learning objective and code remain compatible. Edited localized takes synthesize only changed narration through the existing text/voice/settings-aware cache. Interrupted in-progress video frames are rendered again in a unique attempt directory; completed MP4s are reused after profile verification. User-authored versions remain immutable. Stage recovery is not a promise of resuming a model token stream or a partially encoded frame.
+
+Open **Lesson library** at `/workspace/library` to browse saved chapters, storyboard versions, language takes and ready MP4/VTT/SRT downloads. The list is paginated; its search and language filter apply to the displayed page. Opening a saved version passes its exact storyboard/take IDs back to the studio. `/workspace/example` is an explicitly labelled built-in water-cycle demonstration with no generated voice or video; it never silently replaces a failure.
+
+Job endpoints under `/api/projects/jobs` list the signed-in user's latest 50 jobs, optionally filtered by `projectId`. POST `/:jobId/cancel` requests cancellation; POST `/:jobId/retry` resumes an eligible saved job without resetting its attempt budget. The library endpoint is `/api/projects/library?offset=0`. These routes inherit session/origin checks, and cancellation/retry independently check ownership. Private queue payloads and lease tokens are excluded from API responses.
+
+### Fully local PostgreSQL and credentials auth
+
+The offline profile uses installed PostgreSQL tools, the existing Ollama/Indic Parler caches and installed Chrome/FFmpeg. It does not install or modify the Python environment. Its dedicated cluster is under `data/postgres`, listens on `127.0.0.1:55432`, and keeps generated credentials in gitignored `.env.offline` with mode 0600. Offline auth uses a separate secret/cookie prefix and separate accounts; Neon accounts and data are not copied. Offline media lives under `data/offline`.
+
+```sh
+pnpm offline:check                       # Local tools, workspace, cached model and Ollama checks
+pnpm offline:prepare                     # Create/reuse dedicated local database and apply migrations
+pnpm install --offline --frozen-lockfile  # Verify/reuse cached Node dependencies without network
+# Stop the normal pnpm dev processes before switching profiles:
+pnpm dev:offline                         # Web/API/worker/TTS with the local database
+# Stop development processes before stopping the local database:
+pnpm offline:stop
+```
+
+Preparation is complete on this Mac. The normal running app still uses Neon. To switch, stop the normal dev command, run `pnpm dev:offline`, and sign up for a local account. To return, stop offline development and run `pnpm dev`. Rerunning `offline:prepare` reuses the cluster and applies new migrations; it never resets an existing database. Keep the workspace dependencies and model caches on disk before disconnecting. The profile does not bundle model weights for another machine or make hosted Vercel access possible without a network.
+
+Validation: type checking and separate API/worker production builds passed. A focused test against only the isolated local database verified credentials sign-up/session cookies, authenticated library/job routes, queued work surviving worker startup, expired-lease recovery, ownership, cancellation, idempotent completion and retry limits without model inference. `pnpm --dir apps/api test:jobs` reruns it. Offline dependency installation succeeded from cache. Broader interactive UI/model testing remains with the user.
+
+References: [PostgreSQL locking](https://www.postgresql.org/docs/17/explicit-locking.html), [PostgreSQL advisory lock functions](https://www.postgresql.org/docs/17/functions-admin.html).
+
 ## Current scope
 
-Implemented: repo/tooling, themed landing, credentials auth, protected studio, local topic scoping, editable outlines, scripts/storyboards, static previews, bundled references, local localization, offline scene voiceover, saved takes and WAV playback/download.
+Implemented: repo/tooling, themed landing, credentials auth, protected studio, local topic scoping, editable outlines, scripts/storyboards, static previews, bundled references, local localization, offline scene voiceover, saved takes and WAV playback/download, audio-driven chapter playback, bounded narration fitting, captioned MP4 exports, durable jobs, cancellation/recovery, a lesson library and an offline database/auth profile.
 
-Not yet implemented: audio-driven timelines, duration fitting, video rendering or merging. The landing example is hand-built; the chapter studio uses locally generated drafts. Neon auth and persistence need a network connection; the later offline runtime needs local PostgreSQL and local auth configuration.
+Next: course generation and chapter merging. The default profile uses Neon and needs connectivity; the prepared offline profile uses local PostgreSQL, local credentials auth and cached models.
 
-No Git commits or remote repository have been created.
+This phase does not create Git commits or push changes.

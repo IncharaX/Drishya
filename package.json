@@ -17,7 +17,11 @@
     "db:studio": "pnpm --filter @drishya/db db:studio",
     "db:check": "pnpm --filter @drishya/api db:check",
     "ui:add": "pnpm --filter @drishya/web exec shadcn add",
-    "test:auth": "pnpm --filter @drishya/api test:auth"
+    "test:auth": "pnpm --filter @drishya/api test:auth",
+    "offline:check": "node scripts/offline.mjs check",
+    "offline:prepare": "node scripts/offline.mjs prepare",
+    "dev:offline": "node scripts/offline.mjs dev",
+    "offline:stop": "node scripts/offline.mjs stop"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",

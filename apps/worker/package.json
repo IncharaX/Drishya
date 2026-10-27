@@ -1,0 +1,12 @@
+{
+  "name": "@drishya/worker",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "node ../api/scripts/start-worker.mjs",
+    "start": "node ../api/scripts/start-worker.mjs --production"
+  },
+  "dependencies": {
+    "@drishya/api": "workspace:*"
+  }
+}

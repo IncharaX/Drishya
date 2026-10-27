@@ -19,6 +19,9 @@ import {
   saveOutline,
 } from "./service";
 
+import { libraryRouter } from "../library/routes";
+import { jobsRouter } from "../jobs/routes";
+
 export const projectRouter = Router();
 projectRouter.use(async (req, res, next) => {
   if (
@@ -34,6 +37,8 @@ projectRouter.use(async (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
 });
+projectRouter.use("/jobs", jobsRouter);
+projectRouter.use("/library", libraryRouter);
 projectRouter.get("/", async (_req, res) => {
   res.json(await listProjects(res.locals.userId));
 });

@@ -26,7 +26,7 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
   },
   advanced: {
-    cookiePrefix: "drishya",
+    cookiePrefix: env.APP_PROFILE === "offline" ? "drishya-offline" : "drishya",
     defaultCookieAttributes: {
       httpOnly: true,
       sameSite: "lax",
