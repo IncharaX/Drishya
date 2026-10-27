@@ -10,10 +10,14 @@
   },
   "dependencies": {
     "@drishya/contracts": "workspace:*",
+    "@drishya/renderer": "workspace:*",
     "@drishya/ui": "workspace:*",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/instrument-serif": "5.3.0",
     "@fontsource/inter": "5.3.0",
+    "@fontsource/noto-sans-devanagari": "5.3.0",
+    "@fontsource/noto-sans-kannada": "5.3.0",
+    "@fontsource/noto-sans-telugu": "5.3.0",
     "@tanstack/react-query": "5.104.5",
     "axios": "1.20.0",
     "better-auth": "1.7.13",
@@ -21,9 +25,8 @@
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "zustand": "5.0.16",
     "zod": "4.6.7",
-    "@drishya/renderer": "workspace:*"
+    "zustand": "5.0.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",

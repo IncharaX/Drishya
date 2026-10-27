@@ -6,7 +6,7 @@ export function reserveModel() {
   if (occupied)
     throw new HttpError(
       429,
-      "The local model is working on another outline or storyboard. Wait for it to finish, then retry.",
+      "Local generation is working on another outline, storyboard, or voiceover. Wait for it to finish, then retry.",
       "MODEL_BUSY",
     );
   occupied = true;

@@ -6,6 +6,7 @@ import type {
   LessonReference,
   Storyboard,
 } from "@drishya/contracts";
+import type { LocalizedStoryboard, SceneAudio } from "@drishya/contracts";
 import {
   boolean,
   index,
@@ -212,6 +213,41 @@ export const lessonVersion = drishya.table(
     uniqueIndex("lesson_chapter_version_idx").on(
       table.chapterId,
       table.version,
+    ),
+  ],
+);
+
+export const voiceover = drishya.table(
+  "voiceover",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    lessonVersionId: uuid("lesson_version_id")
+      .notNull()
+      .references(() => lessonVersion.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id"),
+    language: text("language", {
+      enum: ["en", "hi", "kn", "te", "mr"],
+    }).notNull(),
+    voiceId: text("voice_id").notNull(),
+    voiceLabel: text("voice_label").notNull(),
+    speed: text("speed").notNull(),
+    status: text("status", {
+      enum: ["localizing", "synthesizing", "ready", "failed"],
+    }).notNull(),
+    origin: text("origin", { enum: ["generated", "edited"] }).notNull(),
+    content: jsonb("content").$type<LocalizedStoryboard>(),
+    audio: jsonb("audio").$type<SceneAudio[]>().notNull().default([]),
+    totalScenes: integer("total_scenes").notNull(),
+    translationModel: text("translation_model").notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("voiceover_version_created_idx").on(
+      table.lessonVersionId,
+      table.createdAt,
     ),
   ],
 );

@@ -5,22 +5,32 @@ import { useId } from "react";
 
 function wrap(text: string, length: number, max = 3): string[] {
   const lines: string[] = [];
+  const parts = (value: string) =>
+    Array.from(
+      new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value),
+      (item) => item.segment,
+    );
   for (const word of text.split(/\s+/u)) {
     const last = lines.length - 1;
-    if (last < 0 || (lines[last]?.length ?? 0) + word.length + 1 > length)
+    if (
+      last < 0 ||
+      parts(lines[last] ?? "").length + parts(word).length + 1 > length
+    )
       lines.push(word);
     else lines[last] += ` ${word}`;
   }
   // Clip any unusually long token visually; the editor retains the full text.
-  return lines
-    .slice(0, max)
-    .map((line, i) =>
-      line.length > length
-        ? `${line.slice(0, length - 1)}…`
-        : i === max - 1 && lines.length > max
-          ? `${line.slice(0, length - 1)}…`
-          : line,
-    );
+  return lines.slice(0, max).map((line, i) =>
+    parts(line).length > length
+      ? `${parts(line)
+          .slice(0, length - 1)
+          .join("")}…`
+      : i === max - 1 && lines.length > max
+        ? `${parts(line)
+            .slice(0, length - 1)
+            .join("")}…`
+        : line,
+  );
 }
 function TextBlock({
   text,
@@ -30,7 +40,7 @@ function TextBlock({
   size = 28,
   anchor = "start",
   max = 3,
-  font = "Inter, sans-serif",
+  font = "Inter, Noto Sans Devanagari, Noto Sans Kannada, Noto Sans Telugu, sans-serif",
 }: {
   text: string;
   x: number;
@@ -64,9 +74,11 @@ function TextBlock({
 export function SceneCanvas({
   scene,
   progress = 1,
+  locale = "en",
 }: {
   scene: Scene;
   progress?: number;
+  locale?: "en" | "hi" | "kn" | "te" | "mr";
 }) {
   const id = useId().replace(/:/gu, "");
   const t = Math.max(0, Math.min(1, progress));
@@ -87,6 +99,8 @@ export function SceneCanvas({
   return (
     <svg
       viewBox="0 0 1280 720"
+      lang={locale}
+      direction="ltr"
       width="1280"
       height="720"
       role="img"
@@ -138,7 +152,15 @@ export function SceneCanvas({
           width={48}
           size={48}
           max={2}
-          font="Instrument Serif, Georgia, serif"
+          font={
+            locale === "en"
+              ? "Instrument Serif, Georgia, serif"
+              : locale === "kn"
+                ? "Noto Sans Kannada, sans-serif"
+                : locale === "te"
+                  ? "Noto Sans Telugu, sans-serif"
+                  : "Noto Sans Devanagari, sans-serif"
+          }
         />
         {scene.type === "title" && (
           <g>

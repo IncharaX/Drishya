@@ -14,5 +14,8 @@ export const env = z
       .min(10_000)
       .max(600_000)
       .default(180_000),
+    INFERENCE_URL: z.url().default("http://127.0.0.1:8001"),
+    INFERENCE_SECRET: z.string().min(32),
+    MEDIA_ROOT: z.string().default("../../data"),
   })
   .parse(process.env);

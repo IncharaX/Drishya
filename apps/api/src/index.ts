@@ -2,6 +2,7 @@ import { app } from "./app";
 import { pool } from "./database";
 import { env } from "./env";
 import { recoverInterruptedPlans, stopPlanning } from "./planning/service";
+import { recoverInterruptedVoiceovers, stopVoiceovers } from "./speech/service";
 import {
   recoverInterruptedStoryboards,
   stopStoryboards,
@@ -10,6 +11,7 @@ import {
 try {
   await recoverInterruptedPlans();
   await recoverInterruptedStoryboards();
+  await recoverInterruptedVoiceovers();
 } catch {
   console.error(
     "Could not initialize project storage. Check the database connection and apply pending migrations.",
@@ -23,7 +25,7 @@ const server = app.listen(env.PORT, () => {
 
 function shutdown() {
   server.close(() => {
-    void Promise.all([stopPlanning(), stopStoryboards()])
+    void Promise.all([stopPlanning(), stopStoryboards(), stopVoiceovers()])
       .finally(() => pool.end())
       .finally(() => process.exit(0));
   });

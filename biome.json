@@ -10,7 +10,10 @@
       "!!**/dist",
       "!!pnpm-lock.yaml",
       "!!**/next-env.d.ts",
-      "!!**/drizzle/meta"
+      "!!**/drizzle/meta",
+      "!!data",
+      "!!**/.venv",
+      "!!**/__pycache__"
     ]
   },
   "formatter": {

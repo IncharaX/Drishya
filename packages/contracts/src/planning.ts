@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 export const MAX_CHAPTERS = 8;
-export const languageSchema = z.enum(["en", "hi", "mr"]);
+// Marathi remains parseable only to preserve existing projects and saved takes.
+export const languageSchema = z.enum(["en", "hi", "kn", "te", "mr"]);
+export const narrationLanguageSchema = z.enum(["en", "hi", "kn", "te"]);
 export const levelSchema = z.enum(["beginner", "intermediate", "advanced"]);
 export const planRequestSchema = z
   .object({

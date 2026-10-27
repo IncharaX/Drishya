@@ -7,6 +7,12 @@ import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/noto-sans-devanagari/400.css";
+import "@fontsource/noto-sans-devanagari/500.css";
+import "@fontsource/noto-sans-kannada/400.css";
+import "@fontsource/noto-sans-kannada/500.css";
+import "@fontsource/noto-sans-telugu/400.css";
+import "@fontsource/noto-sans-telugu/500.css";
 import "@drishya/ui/styles/globals.css";
 import { Providers } from "@/components/providers";
 

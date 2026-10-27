@@ -1,6 +1,7 @@
 import { storyboardSaveSchema } from "@drishya/contracts";
 import { Router } from "express";
 import { z } from "zod";
+import { voiceoverRouter } from "../speech/routes";
 import {
   generateStoryboard,
   getVersion,
@@ -10,6 +11,7 @@ import {
 
 // Mounted inside the authenticated, origin-checked project router.
 export const storyboardRouter = Router({ mergeParams: true });
+storyboardRouter.use("/:versionId/voiceovers", voiceoverRouter);
 const ids = (params: Record<string, unknown>) =>
   z.object({ id: z.uuid(), chapterId: z.uuid() }).parse(params);
 storyboardRouter.get("/", async (req, res) => {

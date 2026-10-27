@@ -16,7 +16,7 @@ apps/
   api/                 Node.js/Express API and Better Auth
   worker/              Durable generation and rendering jobs (later)
 services/
-  inference/           Local Python speech/translation service (later)
+  inference/           Local Python speech service and offline voice registry
 packages/
   ui/                  Shared shadcn components and Medvai theme
   db/                  Drizzle schema, PostgreSQL client and migrations
@@ -132,7 +132,7 @@ Each chapter export records its lesson version, language, model/voice revisions,
 ### Phase 3 — Offline speech and localization
 
 - Add a local Python speech service and provider registry.
-- Select providers based on actual CPU feasibility and voice quality: Indic Parler for Indian-accented English; Piper/Indic Parler candidates for Hindi and one additional Indian language.
+- Reuse the existing AI4Bharat Indic Parler environment with one persistent MPS model for English, Hindi, Kannada and Telugu.
 - Download and package required weights, tokenizers, phonemizers and voice assets.
 - Generate per-scene WAV files and cache them with complete generation settings.
 - Localize narration and display text while protecting technical tokens.
@@ -140,6 +140,8 @@ Each chapter export records its lesson version, language, model/voice revisions,
 - Start with English plus two Indian languages; keep the language registry extensible.
 
 **Deliverable:** Offline narration and localized scene text for the three initial languages.
+
+**Implementation status:** Reworked around the existing Python 3.11 AI4Bharat Indic Parler environment, persistent MPS inference, offline cache-only loading, and four languages (English, Hindi, Kannada, Telugu). The Node TTS boundary and saved per-scene WAV pipeline remain intact. Speaker profiles and generation configuration match the known-working test.py. Localized editing, matching fonts, provider-aware caching and authenticated playback are included. Four-language integration verification is available through `pnpm --dir apps/api test:speech`. Audio duration fitting and synchronized video remain Phase 4.
 
 ### Phase 4 — Audio timing and video export
 

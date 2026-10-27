@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { AccountMenu } from "@/components/account-menu";
 import { Brand } from "@/components/brand";
 import { StoryboardEditor } from "@/components/storyboard-editor";
+import { VoiceoverPanel } from "@/components/voiceover-panel";
 import { getProject, projectError } from "@/lib/projects";
 import {
   generateStoryboard,
@@ -29,6 +30,7 @@ export function StoryboardWorkspace({
   const client = useQueryClient();
   const [versionId, setVersionId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [voiceDirty, setVoiceDirty] = useState(false);
   const [notice, setNotice] = useState("");
   const listKey = ["storyboards", userId, projectId, chapterId];
   const project = useQuery({
@@ -90,7 +92,12 @@ export function StoryboardWorkspace({
     },
   });
   function canLeave() {
-    return !dirty || window.confirm("Discard your unsaved storyboard edits?");
+    return (
+      !(dirty || voiceDirty) ||
+      window.confirm(
+        "Discard your unsaved storyboard or localized narration edits?",
+      )
+    );
   }
   const readOnly = Boolean(
     lesson.data?.isStale ||
@@ -366,10 +373,20 @@ export function StoryboardWorkspace({
                 );
               }}
             />
+            <VoiceoverPanel
+              key={`voice-${lesson.data.id}`}
+              userId={userId}
+              projectId={projectId}
+              chapterId={chapterId}
+              lesson={lesson.data}
+              sourceDirty={dirty}
+              onDirty={setVoiceDirty}
+            />
           </>
         )}
         <footer className="border-t border-border pt-5 text-xs text-ink-muted">
-          Drishya · Storyboards now. Narration and video in the next phases.
+          Drishya · Storyboards and local narration. Video export follows in
+          Phase 4.
         </footer>
       </main>
     </div>

@@ -10,6 +10,7 @@ import { auth } from "../auth";
 import { env } from "../env";
 import { HttpError } from "../http-error";
 import { storyboardRouter } from "../storyboards/routes";
+import { getVoices } from "../speech/client";
 import {
   createProject,
   getProject,
@@ -35,6 +36,9 @@ projectRouter.use(async (req, res, next) => {
 });
 projectRouter.get("/", async (_req, res) => {
   res.json(await listProjects(res.locals.userId));
+});
+projectRouter.get("/speech/voices", async (_req, res) => {
+  res.json(await getVoices());
 });
 projectRouter.use("/:id/chapters/:chapterId/storyboards", storyboardRouter);
 projectRouter.post("/", async (req, res) => {

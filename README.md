@@ -4,7 +4,7 @@ A visual teaching studio. pnpm + Turborepo monorepo with a Next.js frontend, Nod
 
 ## Local development
 
-Use Node.js 24+ and pnpm 11.1.3.
+Use Node.js 24+, pnpm 11.1.3 and the existing Python 3.11 Indic Parler environment for speech.
 
 ```sh
 pnpm install
@@ -13,6 +13,8 @@ cp apps/web/.env.example apps/web/.env.local
 ```
 
 Set `DATABASE_URL` and a random `BETTER_AUTH_SECRET` of at least 32 characters in `apps/api/.env`. Set `BETTER_AUTH_URL=http://localhost:3000`. The supplied development connection and a generated secret are already configured locally. Environment files are gitignored; never put backend secrets in `NEXT_PUBLIC_*` variables.
+
+For a fresh checkout, complete the [Python speech setup](services/inference/README.md) before `pnpm dev`, including matching inference secrets and pointing to the existing cached Indic Parler environment. This machine is already configured.
 
 ```sh
 pnpm db:migrate
@@ -32,6 +34,8 @@ The web app proxies `/api/*` to the API using the server-only `API_URL` environm
 apps/
   web/           Next.js App Router, React Query, Axios, Zustand
   api/           Express, Better Auth, database connection
+services/
+  inference/     Persistent local Indic Parler speech service and WAV cache
 packages/
   ui/            Shared shadcn/Radix components and Medvai theme
   db/            Drizzle schema, SQL migrations, PostgreSQL client
@@ -121,10 +125,24 @@ Curated reference paraphrases for Python control flow and the water cycle are bu
 
 All routes inherit project authentication and origin checks, and validate project/chapter ownership. Apply the new migration before restarting the API. No tests, builds, browser checks or sample generations were run for Phase 2, per the user's testing preference.
 
+## Offline voiceover and localization
+
+Phase 3 is available below a ready storyboard in **Voiceover & localization**. Choose English, Hindi, Kannada or Telugu, select an available local voice, and generate a take. Qwen translates narration and visual text for Hindi, Kannada and Telugu. Code, scene types/order/IDs, diagram connectivity, references and protected technical tokens are retained. Translation and pronunciation need human review.
+
+All four languages use the existing AI4Bharat Indic Parler model on MPS: Thoma, Rohit, Suresh and Prakash respectively. One model remains loaded across requests. No ElevenLabs or hosted speech API is used. Bundled Devanagari, Kannada and Telugu fonts support localized text.
+
+Each take belongs to an exact immutable storyboard version. Progress, localized content and per-scene audio metadata persist in `drishya.voiceover`. The studio supports audio playback, scene WAV download, localized title/narration/visual-text edits and regeneration as a new take. Unchanged audio is reused by a complete text/voice/settings cache; valid translations are reused for alternate voices/speeds and retries. Audio over the target duration is labelled rather than truncated.
+
+Speech uses port 8001 and is included in `pnpm dev`. The launcher invokes `~/AI/indic-tts/.venv/bin/python` without changing the existing environment. All weights and tokenizers load from local cache with offline mode enforced. Follow [services/inference/README.md](services/inference/README.md) for configuration and the service contract.
+
+Voiceover routes are nested under `/api/projects/:id/chapters/:chapterId/storyboards/:versionId/voiceovers`: GET lists the latest 20 takes; POST creates a take; GET `/:takeId` reads a take; POST `/:takeId/revisions` saves corrected localized text and regenerates speech; GET `/:takeId/audio/:sceneId` serves authorized WAVs. GET `/api/projects/speech/voices` reports local provider availability.
+
+Run `pnpm --dir apps/api test:speech` for four-language speech verification through the Node adapter, including WAV validation, one retained MPS model load and preservation of the original working setup. Translation quality still needs human review. Completely offline operation still needs local PostgreSQL instead of Neon.
+
 ## Current scope
 
-Implemented: repo/tooling, themed landing, credentials auth, protected studio, local topic scoping, editable outlines, chapter selection, generated scripts/storyboards, versioned scene editing, static previews and bundled reference notes.
+Implemented: repo/tooling, themed landing, credentials auth, protected studio, local topic scoping, editable outlines, scripts/storyboards, static previews, bundled references, local localization, offline scene voiceover, saved takes and WAV playback/download.
 
-Not yet implemented: localized narration, TTS, audio-driven timelines, video rendering or merging. The landing example is hand-built; the chapter studio uses locally generated drafts. Neon auth and persistence need a network connection; the later offline runtime needs local PostgreSQL and local auth configuration.
+Not yet implemented: audio-driven timelines, duration fitting, video rendering or merging. The landing example is hand-built; the chapter studio uses locally generated drafts. Neon auth and persistence need a network connection; the later offline runtime needs local PostgreSQL and local auth configuration.
 
 No Git commits or remote repository have been created.

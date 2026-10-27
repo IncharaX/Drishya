@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  type PlanRequest,
   languageSchema,
   levelSchema,
+  type PlanRequest,
 } from "@drishya/contracts";
 import { Button } from "@drishya/ui/components/button";
 import { Label } from "@drishya/ui/components/label";
@@ -17,8 +17,8 @@ import {
 import { Textarea } from "@drishya/ui/components/textarea";
 import { WindowPanel } from "@drishya/ui/components/window-panel";
 import { ArrowRight, FileText, LoaderCircle } from "lucide-react";
-import type { createWorkspaceStore } from "@/stores/workspace";
 import { useStore } from "zustand";
+import type { createWorkspaceStore } from "@/stores/workspace";
 
 export function PlanningForm({
   store,
@@ -49,7 +49,7 @@ export function PlanningForm({
           event.preventDefault();
           onPlan({
             topic: state.topic,
-            language: state.language,
+            language: state.language === "mr" ? "en" : state.language,
             level: state.level,
             approach: state.approach,
             targetDurationSeconds: state.targetDurationSeconds,
@@ -104,7 +104,7 @@ export function PlanningForm({
               Lesson language
             </Label>
             <Select
-              value={state.language}
+              value={state.language === "mr" ? "en" : state.language}
               onValueChange={(value) =>
                 state.setLanguage(languageSchema.parse(value))
               }
@@ -116,7 +116,8 @@ export function PlanningForm({
               <SelectContent>
                 <SelectItem value="en">English</SelectItem>
                 <SelectItem value="hi">Hindi · हिन्दी</SelectItem>
-                <SelectItem value="mr">Marathi · मराठी</SelectItem>
+                <SelectItem value="kn">Kannada · ಕನ್ನಡ</SelectItem>
+                <SelectItem value="te">Telugu · తెలుగు</SelectItem>
               </SelectContent>
             </Select>
           </div>

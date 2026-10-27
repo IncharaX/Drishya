@@ -9,3 +9,7 @@ coverage/
 !.env.example
 .DS_Store
 *.log
+data/
+**/.venv/
+**/__pycache__/
+*.pyc

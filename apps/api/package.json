@@ -9,7 +9,8 @@
     "start": "node --env-file=.env dist/index.js",
     "typecheck": "tsc --noEmit",
     "db:check": "tsx --env-file=.env src/check-db.ts",
-    "test:auth": "tsx --env-file=.env scripts/smoke-auth.ts"
+    "test:auth": "tsx --env-file=.env scripts/smoke-auth.ts",
+    "test:speech": "tsx --env-file=.env scripts/smoke-speech.ts"
   },
   "dependencies": {
     "@drishya/contracts": "workspace:*",
