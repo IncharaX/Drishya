@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@source "../";
+@source "../../../../apps/web";
+
+/* Medvai's palette, type, borders and offset shadows, shared by every app. */
+:root {
+  --paper: #f4f1ea;
+  --paper-2: #ebe6dc;
+  --card: #fffdf8;
+  --ink: #1a1a1a;
+  --ink-2: #5c5751;
+  --line: #1a1a1a;
+  --line-soft: #ddd6c9;
+  --pink: #f07289;
+  --pink-soft: #fdeaed;
+  --green: #7ad97a;
+  --green-soft: #e6f5e3;
+  --patient-bg: #eef3ea;
+  --yellow: #f6c945;
+  --yellow-soft: #fdf4d8;
+  --purple: #a49ad8;
+  --purple-soft: #eeebf9;
+  --red: #c2362f;
+  --red-soft: #fbe5e3;
+  --blue-soft: #e5edf8;
+  --grey: #b7b1a6;
+  --shadow: 4px 4px 0 var(--line);
+  --shadow-sm: 3px 3px 0 var(--line);
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+  --primary: var(--pink);
+  --primary-foreground: var(--ink);
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--paper-2);
+  --muted-foreground: var(--ink-2);
+  --accent: var(--pink-soft);
+  --accent-foreground: var(--ink);
+  --destructive: var(--red);
+  --border: var(--line-soft);
+  --input: var(--line);
+  --ring: #2b59c3;
+  --radius: 0rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-2);
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-2);
+  --color-pink: var(--pink);
+  --color-pink-soft: var(--pink-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-yellow: var(--yellow);
+  --color-yellow-soft: var(--yellow-soft);
+  --color-purple: var(--purple);
+  --color-purple-soft: var(--purple-soft);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    line-height: 1.55;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+  ::selection {
+    background: var(--pink-soft);
+  }
+}
+
+/* Medvai gives top-level surfaces a hard shadow; nested content gets soft rules. */
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.window-panel {
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.window-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1.5px solid var(--line);
+}
+.window-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.window-stripes {
+  flex: 1;
+  height: 7px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--line) 0 1px,
+    transparent 1px 3px
+  );
+  opacity: 0.35;
+}
+.field-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+.paper-grid {
+  background:
+    radial-gradient(circle at 1px 1px, rgb(26 26 26 / 0.08) 1px, transparent 0)
+    0 0 / 14px 14px,
+    var(--paper);
+}
+.preview-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1.5px solid var(--line);
+  padding: 14px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 850px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: User reduced-motion preference overrides component utilities. */
+    animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: User reduced-motion preference overrides component utilities. */
+    transition: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: User reduced-motion preference overrides component utilities. */
+    scroll-behavior: auto !important;
+  }
+}
