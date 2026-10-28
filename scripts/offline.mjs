@@ -51,7 +51,14 @@ function config() {
     throw new Error(
       "The offline profile must use the dedicated local database.",
     );
-  return { ...process.env, ...values };
+  for (const key of ["OLLAMA_BASE_URL", "INFERENCE_URL", "API_URL", "BETTER_AUTH_URL"]) {
+    if (values[key] && !new Set(["127.0.0.1", "localhost", "[::1]"]).has(new URL(values[key]).hostname))
+      throw new Error(`${key} must point to this computer in offline mode.`);
+  }
+  return { ...process.env, ...values,
+    NEXT_TELEMETRY_DISABLED: "1", TURBO_TELEMETRY_DISABLED: "1",
+    HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1", HF_HUB_DISABLE_TELEMETRY: "1",
+  };
 }
 async function check() {
   for (const program of [
@@ -241,6 +248,8 @@ try {
   } else if (command === "dev") {
     const env = config();
     await start(env);
+    // Apply new feature migrations on every offline startup as the app evolves.
+    await run("pnpm", ["db:migrate"], env);
     const child = spawn("pnpm", ["dev"], { cwd: root, env, stdio: "inherit" });
     for (const signal of ["SIGINT", "SIGTERM"])
       process.on(signal, () => child.kill(signal));

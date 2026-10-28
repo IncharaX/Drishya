@@ -15,12 +15,16 @@ export async function chat(id: string) {
     (await api.get(`/projects/chats/${id}`)).data,
   );
 }
-export async function createChat(prompt: string, requestId: string) {
+export async function createChat(
+  prompt: string,
+  requestId: string,
+  attachmentIds: string[] = [],
+) {
   return conversationDetailSchema.parse(
     (
       await api.post(
         "/projects/chats",
-        { prompt, requestId },
+        { prompt, requestId, attachmentIds },
         { timeout: 30_000 },
       )
     ).data,
@@ -129,4 +133,15 @@ export async function savePreferenceDraft(
   settings: CreationSettings,
 ) {
   await api.patch(`/projects/chats/${id}/preferences`, { settings });
+}
+
+export async function uploadSource(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return (await api.post("/projects/uploads", body, { timeout: 60000 }))
+    .data as { id: string; name: string; size: number; characters: number };
+}
+
+export async function removeSource(id: string) {
+  await api.delete(`/projects/uploads/${id}`);
 }

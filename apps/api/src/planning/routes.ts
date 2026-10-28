@@ -23,6 +23,8 @@ import { chatRouter } from "../explanations/routes";
 import { libraryRouter } from "../library/routes";
 import { jobsRouter } from "../jobs/routes";
 
+import { uploadsRouter } from "../explanations/uploads";
+import { videoFeaturesRouter } from "../explanations/learning";
 export const projectRouter = Router();
 projectRouter.use(async (req, res, next) => {
   if (
@@ -38,6 +40,8 @@ projectRouter.use(async (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
 });
+projectRouter.use("/video-features", videoFeaturesRouter);
+projectRouter.use("/uploads", uploadsRouter);
 projectRouter.use("/jobs", jobsRouter);
 projectRouter.use("/chats", chatRouter);
 projectRouter.use("/library", libraryRouter);

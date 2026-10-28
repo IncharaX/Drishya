@@ -7,6 +7,7 @@ import { HttpError } from "./http-error";
 import { projectRouter } from "./planning/routes";
 import { ZodError } from "zod";
 
+import { sharedVideoRouter } from "./explanations/learning";
 export const app = express();
 app.disable("x-powered-by");
 app.use(helmet());
@@ -34,6 +35,7 @@ app.get("/api/me", async (req, res) => {
   res.json({ user: session.user });
 });
 
+app.use("/api/shared", sharedVideoRouter);
 app.use("/api/projects", projectRouter);
 
 app.use((_req, res) => {
@@ -53,6 +55,12 @@ const onError: ErrorRequestHandler = (error, _req, res, _next) => {
         .join(" "),
       code: "INVALID_INPUT",
     });
+    return;
+  }
+  if (error instanceof Error && error.name === "MulterError") {
+    res
+      .status(400)
+      .json({ error: "Upload one supported file at a time, up to 10 MB." });
     return;
   }
   const badJson = error instanceof SyntaxError && "body" in error;

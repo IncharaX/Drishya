@@ -1,65 +1,36 @@
-# Generation speed plan — pending approval
+# Generation speed plan — approved direction
 
-No speed optimization in this plan has been implemented. The functional history, duration, editing, scene, sound and UI changes are separate.
+## Targets
 
-## Goal
+For a normal 30–40 second explanation, reduce generation from roughly ten minutes toward two to three minutes. Measure these separately:
 
-Make a fresh 30–40 second explanation usable within a five-minute presentation window on this M5 MacBook Pro with 16 GiB of memory. Keep Qwen and the existing AI4Bharat Indic Parler installation, all four languages, real animation, exact duration and the standard 1080p export. Measure preview-ready and downloadable-MP4-ready separately. A 120-second video within five minutes is an additional benchmark target, not a promise before measurement.
+- Narrated Remotion preview: within 60 seconds where practical.
+- 1280×720 MP4: roughly 120 seconds.
+- Optional 1080p MP4: roughly 180 seconds where achievable.
+- 120-second explanation: separate five-minute benchmark.
 
-## Evidence from the current application
+Targets are not timing guarantees. Queue-inclusive wall time, actual worker execution, preview readiness and MP4 readiness must remain distinct. Keep Qwen 8B, the existing AI4Bharat Indic Parler setup and all four languages. Do not require 1080p before a usable result.
 
-Recent completed records contain these stage timings, rounded to seconds:
+## Implementation order
 
-| Video duration | Writing/planning | Speech and duration fitting | Rendering | Worker total | Wall time including waiting/recovery |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 25 s | 83 | 80 | 63 | 228 | 1,249 |
-| 60 s | 59 | 131 | 120 | 311 | 1,063 |
-| 44 s | 108 | 278 | 96 | 483 | 489 |
-| 28.7 s | 81 | 317 | 77 | 478 | 653 |
+1. **Queue, recovery and wall-time overhead.** Persist enqueue, claim, eligibility, attempt boundaries, worker availability, recovery and failure/retry events. Measure claim/database time separately. Schedule conversations fairly without preempting active jobs. Preserve completed stages on retries.
+2. **Speech and fitting.** Record model loading, lock wait, tokenization, each synchronized inference call, audio duration, writing, cache hits, failures, script rewrites and discarded takes. Calibrate the first script before synthesizing. Do not repeat a no-op rewrite. Keep unchanged beat audio. Use the existing modest tempo bounds only where the resulting delivery remains clear; do not trade speed for rushed narration or empty holds.
+3. **Qwen round trips.** Benchmark one structured call combining ambiguity screening, script and visual direction for short overviews. Keep selectable clarification cards and full chapter assessment for longer/complete coverage. Remove application-owned timing/resource fields and redundant schema prose from generated output. Measure loading, prompt evaluation, decoding, token count and repairs.
+4. **Remotion rendering.** Show the existing Player as soon as narration and exact timing are ready. Default new exports to 720p and offer 1080p explicitly. Benchmark bounded concurrency and the matching render browser on the same scene before rollout. Preserve H.264/AAC, exact frame counts, audio validation and visual meaning.
+5. **Cross-generation and revision caching.** Retain the existing content-addressed speech and scene caches. Reuse unchanged narration during edits. Keep cache hits explicit in benchmarks so warm reuse is not presented as fresh-inference performance.
 
-These are persisted application samples, including warm or recovered work, rather than controlled benchmarks. They show two distinct problems: stage execution costs roughly four to eight minutes, and queueing/recovery can make the wait much longer. Speech is the largest stage in the slower samples; writing and rendering also matter. Raising render concurrency alone will not solve the whole delay.
+## Safe changes implemented
 
-## Proposed order
+Per-attempt events are stored in `data/v2/metrics/`; speech timings are in `data/audio/synthesis-metrics.jsonl`. They omit narration text and credentials. Worker lifecycle events allow unavailable time to be distinguished from active work going forward. Historic missing transitions remain unknown.
 
-### 1. Establish a small repeatable baseline
+Explicit short overviews use one ambiguity-aware structured call. Writer output omits audio keys, audio durations, frame counts and unused shape/timing defaults. Short videos use three connected beats with a calibrated narration budget. Obvious text-budget misses are repaired before speech. Identical rewrites stop rather than re-running the same fitting loop; unchanged narration retains its audio. Mildly short speech can use the already supported slower teaching pace, within 0.85×–1×, with visual demonstration time. Oversized speech retains the existing maximum 1.18× and asks for a duration choice when it cannot fit clearly.
 
-Use the same 30–40 second explanation in English, Hindi, Kannada and Telugu. Record cold start, warm generation, visual-only edit and one narration edit. Separate model loading, writer inference, synthesis, duration rewrites, rendering and queue wait. Record memory pressure and whether the installed speech runtime stays on MPS. Avoid benchmarking while another generation owns the machine.
+Queue scheduling accounts for service already received by the same conversation. New exports default to 720p; additional preferences offer 1080p. Two rendering pages and the separately prepared matching Remotion Chromium are limited to 2D scenes; 3D retains one page in known-working Chrome. Prepare the render-only browser once with `pnpm exec tsx --env-file=.env scripts/prepare-render-browser.ts` from `apps/api`; subsequent generation uses the cached executable without downloading anything. The narrated Player remains available while the MP4 renders.
 
-### 2. Reduce speech cost while preserving the working setup
+The speech model remains persistent and uses the same loading, tokenizer and generation arguments. Startup prewarming moves its first load out of the first generation where the app has already been started. No model/package/interpreter/dtype/attention/compilation change is part of this rollout.
 
-Benchmark supported attention and precision configurations in an isolated adapter configuration using the existing interpreter and downloaded model. Keep the current working configuration as the fallback. Compare pronunciation and timing in all four languages before choosing a faster configuration. Do not reinstall Python packages or change the original test.py environment.
+## Validation and next decision
 
-Parler documents efficient attention, compilation, streaming and batching, but its GPU examples are not evidence of the same speed-up on this Mac. Check capabilities in the installed runtime; do not assume CUDA-only Flash Attention works on Apple Silicon. Start with safe attention/precision comparisons and cached speaker-description tokenization. Treat compilation as optional if its cold-start cost or MPS support makes it unsuitable for a demo. [Parler inference documentation](https://github.com/huggingface/parler-tts/blob/main/INFERENCE.md).
+Use fresh 30-second prompts through the real worker, with a disposable account. Record every call and cache hit, exact exported duration, readable scene frames, audio duration and audibility. Test all four speech languages separately. Compare identical render fixtures before choosing browser/concurrency settings.
 
-Benchmark two or three coherent narration groups for a short video instead of many tiny synthesis requests. Maintain stable group-to-scene timing and reuse unchanged groups during edits. Fewer requests may improve continuity and overhead, but decoder time still scales with spoken audio; measure rather than assume a large gain.
-
-### 3. Reduce writer round trips and repeated fitting
-
-For an unambiguous short request with a fixed duration, test one compact structured call that produces the explanation and visual direction together. Keep clarification and chapter planning for cases that need them. Remove redundant schema text and model-generated resource/timing fields from the writer payload; the application should own those values. Keep validation and bounded repair.
-
-Calibrate word budgets from the measured local voice/language so the first script lands near the requested duration. Preserve exact exported timing while reducing complete rewrite-and-resynthesis cycles. Do not solve duration by rushing the voice or adding long empty holds.
-
-### 4. Manage the Mac's memory and warm-up deliberately
-
-Measure retaining both models versus releasing the inactive model between writing and narration. Keep the speech model loaded throughout a narration phase and its multiple requests. Avoid concurrent heavy model work if it causes swapping. Warm cached assets/models before the presentation and display actual readiness. Keep memory limits intact; do not disable safeguards to force a larger working set. [PyTorch MPS memory reporting](https://docs.pytorch.org/docs/stable/generated/torch.mps.recommended_max_memory.html).
-
-### 5. Tune rendering without silently reducing quality
-
-Benchmark render concurrency 1, 2 and 3 on representative 2D and 3D compositions. Keep the best stable setting for this machine rather than using all CPU cores. Reuse existing browser/bundle/scene caches. Evaluate hardware H.264 encoding only after checking the installed encoder and matching visual quality. [Remotion performance guidance](https://www.remotion.dev/docs/performance).
-
-Separate the global timeline overlay from expensive scene footage where practical, so a timing change does not invalidate otherwise reusable animation. Keep soundtrack-only and unchanged-narration edits cheap. An explicitly selected presentation preview at 720p may be offered alongside the standard 1080p export; never downgrade the final file silently.
-
-### 6. Prevent a chapter collection from blocking every new request
-
-Schedule work fairly between conversations rather than placing every chapter of one collection ahead of all interactive work. Show queue position and estimates. Keep one heavy inference workload at a time until memory measurements support more. Never interrupt an active user generation to prioritize a demo or test.
-
-## Acceptance and rollout
-
-- Compare the same inputs before and after; report stage timings and total elapsed time.
-- Target a fresh 30–40 second 1080p MP4 within five minutes, then benchmark longer videos separately.
-- Retain exact duration, graph/flow meaning, native-language speech and readable visuals.
-- Check all four voices and a combined font/3D/narration edit for regressions.
-- Keep each change configurable and retain the working inference configuration.
-- Do not claim a timing guarantee until repeated runs meet it. If the existing model cannot meet the target on this hardware, report the measured limit before proposing another model or hosted service.
-
-Implementation starts only after approval of this plan.
+See [PERFORMANCE-REPORT.md](PERFORMANCE-REPORT.md) for the measured breakdown and remaining gaps. Do not claim targets met from an isolated cache replay or from component timings added together. If the unchanged model remains the limiting factor, report that evidence and propose an isolated reversible inference experiment before changing the working setup.

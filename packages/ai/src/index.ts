@@ -6,3 +6,8 @@ export { OllamaStoryteller } from "./storyboard";
 export { ExplanationDirector, type DirectorEdit } from "./director";
 
 export { applyDirectorEdit, interpretDirectEdit } from "./director";
+
+export { ScopeQuestion } from "./scope-question";
+export {sourceGroundingIssues,type SourceDocument} from "./sources";
+
+export { prepareProgrammingScenes } from "./programming";

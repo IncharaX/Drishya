@@ -23,6 +23,60 @@ class FixtureDirector extends ExplanationDirector {
   }
 }
 const signal = new AbortController().signal;
+class TranslationFixture extends ExplanationDirector {
+  constructor() {
+    super({ baseURL: "http://unused.invalid", model: "fixture", timeoutMs: 1 });
+  }
+  protected override async generate(
+    messages: { role: string; content: string }[],
+  ) {
+    const texts = JSON.parse(messages.at(-1)!.content) as string[];
+    assert.equal(
+      new Set(texts).size,
+      texts.length,
+      "Repeated text should translate once",
+    );
+    return JSON.stringify({
+      translations: texts.map((text) => `हिंदी ${text}`),
+    });
+  }
+}
+const translationSource = examplePlan("process"),
+  translationBefore = structuredClone(translationSource);
+const translation = await new TranslationFixture().translate(
+  translationSource,
+  "hi",
+  signal,
+);
+assert.deepEqual(
+  translationSource,
+  translationBefore,
+  "Translation must not mutate the original video",
+);
+assert.equal(translation.language, "hi");
+translation.beats.forEach((beat, index) => {
+  assert.equal(beat.id, translationBefore.beats[index].id);
+  assert.deepEqual(
+    beat.visual.nodes.map((n) => n.id),
+    translationBefore.beats[index].visual.nodes.map((n) => n.id),
+  );
+  assert.deepEqual(
+    beat.visual.links.map(({ from, to }) => ({ from, to })),
+    translationBefore.beats[index].visual.links.map(({ from, to }) => ({
+      from,
+      to,
+    })),
+  );
+  assert.match(beat.narration, /हिंदी/u);
+  assert.equal(beat.audioKey, undefined);
+});
+await assert.rejects(() =>
+  new FixtureDirector({ translations: [] }).translate(
+    translationSource,
+    "hi",
+    signal,
+  ),
+);
 const chapter = (title: string) => ({
   title,
   objective: "Explain this distinct section clearly.",

@@ -1,7 +1,9 @@
+import { PythonExecution, pythonTrace } from "./python-execution";
 import {
   type ExplanationBeat,
   type MotionPlan,
   planFrames,
+  timedCaptionCues,
 } from "@drishya/contracts";
 // biome-ignore lint/correctness/noUnusedImports: Required by the export bundler JSX transformation.
 import React from "react";
@@ -253,24 +255,8 @@ function Code({
 }
 function Captions({ beat, ink }: { beat: ExplanationBeat; ink: string }) {
   const frame = useCurrentFrame();
-  const words = beat.narration.split(/\s+/u),
-    chunks: string[] = [];
-  let text = "";
-  for (const word of words) {
-    if ((text + word).length > 70 && text) {
-      chunks.push(text.trim());
-      text = "";
-    }
-    text += `${word} `;
-  }
-  if (text) chunks.push(text.trim());
-  const duration = Math.max(
-    1,
-    (beat.audioDuration ?? (beat.durationInFrames ?? 180) / 30) * 30,
-  );
-  const index = Math.min(
-    chunks.length - 1,
-    Math.floor((Math.max(0, frame - 6) / duration) * chunks.length),
+  const cue = timedCaptionCues(beat).find(
+    (cue) => frame / 30 >= cue.start && frame / 30 < cue.end,
   );
   return (
     <div
@@ -283,10 +269,10 @@ function Captions({ beat, ink }: { beat: ExplanationBeat; ink: string }) {
         fontSize: 22,
         lineHeight: 1.45,
         color: ink,
-        opacity: frame < 6 ? 0 : 0.86,
+        opacity: cue ? 0.86 : 0,
       }}
     >
-      {chunks[index]}
+      {cue?.text ?? ""}
     </div>
   );
 }
@@ -446,7 +432,7 @@ export function MotionShot({
             font={videoFont}
           />
         ) : beat.visual.kind === "code" ? (
-          <Code beat={beat} accent={accent} ink={ink} dark={dark} />
+          pythonTrace(beat.visual.code) ? <PythonExecution beat={beat} accent={accent} /> : <Code beat={beat} accent={accent} ink={ink} dark={dark} />
         ) : beat.visual.kind === "solar" ? null : beat.visual.kind ===
             "chart" && beat.visual.dimension !== "3d" ? (
           <Comparison beat={beat} accent={accent} ink={ink} dark={dark} />

@@ -5,6 +5,7 @@ export const jobKindSchema = z.enum([
   "voiceover",
   "video",
   "explanation",
+  "learning",
 ]);
 export const jobStatusSchema = z.enum([
   "queued",

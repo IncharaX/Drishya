@@ -25,6 +25,8 @@ import {
   chapterChoice,
   chat,
   createChat,
+  uploadSource,
+  removeSource,
   generateChat,
   retryVideo,
   savePreferenceDraft,
@@ -58,6 +60,10 @@ export function ChatStudio({
   userId: string;
   chatId?: string;
 }) {
+  const [attachments, setAttachments] = useState<
+      { id: string; name: string }[]
+    >([]),
+    [uploading, setUploading] = useState(false);
   const client = useQueryClient(),
     router = useRouter();
   const [error, setError] = useState(""),
@@ -136,7 +142,13 @@ export function ChatStudio({
     }
   }, [draft]);
   async function submit() {
-    if (!draft.trim() || submitting || busy) return;
+    if (
+      (!draft.trim() && !attachments.length) ||
+      submitting ||
+      busy ||
+      uploading
+    )
+      return;
     setSubmitting(true);
     setError("");
     try {
@@ -148,9 +160,14 @@ export function ChatStudio({
             moment?.time,
             moment?.revisionId,
           )
-        : await createChat(draft.trim(), requestId.current);
+        : await createChat(
+            draft.trim() || "Explain the uploaded file",
+            requestId.current,
+            attachments.map((file) => file.id),
+          );
       accept(next);
       clear(draftKey);
+      setAttachments([]);
       requestId.current = crypto.randomUUID();
       setMoment(null);
       if (!chatId) router.push(`/workspace/chat/${next.conversation.id}`);
@@ -433,6 +450,15 @@ export function ChatStudio({
                     ) : (
                       <div>
                         {String(message.content.text ?? "")}
+                        {Array.isArray(message.content.attachments) &&
+                          message.content.attachments.map((value: unknown) => {
+                            const file = value as { id: string; name: string };
+                            return (
+                              <span className="v2-attachment" key={file.id}>
+                                {file.name}
+                              </span>
+                            );
+                          })}
                         {typeof message.content.timestamp === "number" && (
                           <small>
                             At {message.content.timestamp.toFixed(1)}s
@@ -681,6 +707,63 @@ export function ChatStudio({
               </button>
             </div>
           )}
+          {!chatId && (
+            <div className="v2-attachments">
+              <label className="v2-text-button">
+                {uploading ? "Updating files…" : "Attach a file"}
+                <input
+                  type="file"
+                  hidden
+                  accept=".pdf,.docx,.txt,.md,.csv"
+                  disabled={uploading || attachments.length >= 3 || submitting}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    setUploading(true);
+                    try {
+                      const uploaded = await uploadSource(file);
+                      setAttachments((current) => [...current, uploaded]);
+                    } catch (reason) {
+                      setError(projectError(reason));
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                />
+              </label>
+              <span>
+                PDF, DOCX, TXT, MD, CSV · 10 MB/file · 12,000 extracted
+                characters total
+              </span>
+              {attachments.map((file) => (
+                <span className="v2-attachment" key={file.id}>
+                  {file.name}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    disabled={uploading || submitting}
+                    onClick={async () => {
+                      setUploading(true);
+                      try {
+                        await removeSource(file.id);
+                        setAttachments((current) =>
+                          current.filter((item) => item.id !== file.id),
+                        );
+                      } catch (reason) {
+                        setError(projectError(reason));
+                      } finally {
+                        setUploading(false);
+                      }
+                    }}
+                  >
+                    {" "}
+                    ×{" "}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={textarea}
             value={draft}
@@ -700,7 +783,7 @@ export function ChatStudio({
             }}
             placeholder={
               !chatId
-                ? "Describe the video you have in mind…"
+                ? "Describe the video or attach a file to explain…"
                 : active?.status === "ready" || active?.status === "partial"
                   ? "Ask for a change, or tell me what could be clearer…"
                   : busy
@@ -731,7 +814,8 @@ export function ChatStudio({
               type="submit"
               aria-label={chatId ? "Send change" : "Create chat"}
               disabled={
-                !draft.trim() ||
+                (!draft.trim() && !attachments.length) ||
+                uploading ||
                 submitting ||
                 busy ||
                 (!!chatId &&

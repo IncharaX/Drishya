@@ -3,16 +3,27 @@ import { PlannerError } from "@drishya/ai";
 import { generationJob, workerHeartbeat } from "@drishya/db/schema";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../database";
-import { HttpError } from "../http-error";
 import { executeExplanation } from "../explanations/pipeline";
+import { HttpError } from "../http-error";
 import { executePlanning } from "../planning/service";
 import { executeVoiceover } from "../speech/service";
 import { executeStoryboard } from "../storyboards/service";
 import { executeVideo } from "../video/service";
 import { jobContext } from "./context";
+import { metric } from "./metrics";
 import { resourceFailure, resourcePending } from "./resources";
 
+import { executeLearning } from "../explanations/learning";
 const workerId = randomUUID();
+const workerBootAt = Date.now();
+const liveMetrics = setInterval(() => {
+  void metric(
+    "worker_live",
+    { workerId, bootAt: workerBootAt },
+    "_workers",
+  ).catch(() => {});
+}, 15000);
+await metric("worker_boot", { workerId, bootAt: workerBootAt }, "_workers");
 let stopping = false,
   active: AbortController | null = null;
 const stop = () => {
@@ -24,9 +35,13 @@ process.on("SIGTERM", stop);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const leaseSQL = sql`now()+interval '90 seconds'`;
 async function claim() {
+  const claimStarted = Date.now();
   return db.transaction(async (tx) => {
     // Transaction-level advisory locks work through Neon's transaction pooler.
-    await tx.execute(sql`select pg_advisory_xact_lock(72415,5)`);
+    const gate = await tx.execute(
+      sql`select pg_try_advisory_xact_lock(72415,5) as acquired`,
+    );
+    if (!gate.rows[0]?.acquired) return null;
     await tx
       .insert(workerHeartbeat)
       .values({ id: workerId, seenAt: new Date() })
@@ -45,6 +60,11 @@ async function claim() {
       )
       .for("update");
     for (const job of expired) {
+      await metric(
+        "lease_recovery",
+        { attempt: job.attempts, leaseExpiredAt: job.leaseUntil?.getTime() },
+        job.id,
+      );
       const cancelled = !!job.cancelRequestedAt,
         exhausted = job.attempts >= job.maxAttempts;
       const message = cancelled
@@ -83,7 +103,11 @@ async function claim() {
           sql`${generationJob.runAfter}<=now()`,
         ),
       )
-      .orderBy(asc(generationJob.runAfter), asc(generationJob.createdAt))
+      .orderBy(
+        sql`coalesce((select max(served.updated_at) from drishya.generation_job served where served.project_id=${generationJob.projectId} and served.status='completed' and served.created_at>=${generationJob.createdAt}), timestamp '1970-01-01')`,
+        asc(generationJob.runAfter),
+        asc(generationJob.createdAt),
+      )
       .limit(1)
       .for("update", { skipLocked: true });
     if (!next) return null;
@@ -126,6 +150,15 @@ async function claim() {
       .where(eq(generationJob.id, next.id))
       .returning();
     await resourcePending(tx, claimed);
+    await metric(
+      "claim",
+      {
+        workerId,
+        claimTransactionMs: Date.now() - claimStarted,
+        workerUptimeMs: Date.now() - workerBootAt,
+      },
+      claimed.id,
+    );
     return claimed;
   });
 }
@@ -154,6 +187,18 @@ function failureMessage(error: unknown) {
     : "Generation failed unexpectedly.";
 }
 async function execute(job: typeof generationJob.$inferSelect) {
+  const executionStarted = Date.now();
+  await metric(
+    "attempt_start",
+    {
+      attempt: job.attempts,
+      createdAt: job.createdAt.getTime(),
+      eligibleAt: job.runAfter.getTime(),
+      waitSinceEligibleMs: Date.now() - job.runAfter.getTime(),
+      wallSinceCreatedMs: Date.now() - job.createdAt.getTime(),
+    },
+    job.id,
+  );
   const token = job.lockToken;
   if (!token) throw new Error("Claimed job has no lease token");
   const controller = new AbortController();
@@ -191,6 +236,7 @@ async function execute(job: typeof generationJob.$inferSelect) {
       });
   }, 5000);
   const report = async (stage: string, progress: number) => {
+    await metric("stage", { stage, progress }, job.id);
     controller.signal.throwIfAborted();
     const [live] = await db
       .update(generationJob)
@@ -226,6 +272,9 @@ async function execute(job: typeof generationJob.$inferSelect) {
       },
       async () => {
         switch (job.kind) {
+          case "learning":
+            await executeLearning(job.resourceId, controller.signal);
+            break;
           case "explanation":
             await executeExplanation(job.resourceId, controller.signal);
             break;
@@ -288,6 +337,16 @@ async function execute(job: typeof generationJob.$inferSelect) {
         !cancelled &&
         current.attempts < current.maxAttempts &&
         (stopping || controller.signal.aborted || retryable(error));
+      await metric(
+        "attempt_failure",
+        {
+          attempt: current.attempts,
+          cancelled,
+          retry,
+          reason: failureMessage(error),
+        },
+        job.id,
+      );
       const message = cancelled
         ? "Generation cancelled. Saved outputs are preserved."
         : stopping
@@ -312,6 +371,11 @@ async function execute(job: typeof generationJob.$inferSelect) {
       else await resourceFailure(tx, current, message, cancelled);
     });
   } finally {
+    await metric(
+      "attempt_end",
+      { attempt: job.attempts, executionMs: Date.now() - executionStarted },
+      job.id,
+    );
     clearInterval(heartbeat);
     active = null;
   }
@@ -335,6 +399,8 @@ try {
     }
   }
 } finally {
+  clearInterval(liveMetrics);
+  await metric("worker_stop", { workerId }, "_workers");
   await db
     .delete(workerHeartbeat)
     .where(eq(workerHeartbeat.id, workerId))

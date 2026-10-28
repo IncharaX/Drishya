@@ -1,4 +1,5 @@
 "use client";
+import { VideoFeatures } from "./video-features";
 import type { VideoLibrary } from "@drishya/contracts";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -322,6 +323,14 @@ export function LibraryVideoPage({
                 (row) => row.collectionId === current.id,
               )}
             />
+            {current.status === "ready" && (
+              <VideoFeatures
+                key={current.id}
+                revisionId={current.id}
+                initialLanguage={current.settings.language}
+                initialVoice={current.settings.voice}
+              />
+            )}
           </>
         )}
       </div>

@@ -3,6 +3,7 @@ import { generationJob, workerHeartbeat } from "@drishya/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../database";
 import { HttpError } from "../http-error";
+import { metric } from "./metrics";
 import { resourceFailure, resourcePending } from "./resources";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -29,7 +30,16 @@ export async function enqueue(
     );
   if (active.length)
     throw new HttpError(409, "This generation is already queued or running.");
-  await tx.insert(generationJob).values(input);
+  const [queued] = await tx.insert(generationJob).values(input).returning();
+  await metric(
+    "queued",
+    {
+      projectId: queued.projectId,
+      eligibleAt: queued.runAfter.getTime(),
+      createdAt: queued.createdAt.getTime(),
+    },
+    queued.id,
+  );
 }
 export function serializeJob(record: typeof generationJob.$inferSelect) {
   return generationJobSchema.parse({

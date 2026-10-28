@@ -297,7 +297,14 @@ export const generationJob = drishya.table(
       onDelete: "cascade",
     }),
     kind: text("kind", {
-      enum: ["plan", "storyboard", "voiceover", "video", "explanation"],
+      enum: [
+        "plan",
+        "storyboard",
+        "voiceover",
+        "video",
+        "explanation",
+        "learning",
+      ],
     }).notNull(),
     resourceId: uuid("resource_id").notNull(),
     payload: jsonb("payload")
@@ -460,6 +467,7 @@ export const explanationRevision = drishya.table(
     plan: jsonb("plan").$type<import("@drishya/contracts").MotionPlan>(),
     edit: jsonb("edit")
       .$type<{
+        duplicate?: boolean;
         timestamp?: number;
         beatId?: string;
         selectedBeatIds?: string[];
@@ -503,4 +511,106 @@ export const explanationRevision = drishya.table(
       t.createdAt,
     ),
   ],
+);
+
+export const sourceUpload = drishya.table(
+  "source_upload",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").references(() => conversation.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("source_upload_conversation_idx").on(t.conversationId),
+    index("source_upload_user_idx").on(t.userId),
+  ],
+);
+export const videoLearning = drishya.table("video_learning", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  revisionId: uuid("revision_id")
+    .notNull()
+    .unique()
+    .references(() => explanationRevision.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("queued"),
+  content:
+    jsonb("content").$type<import("@drishya/contracts").LearningContent>(),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+export const videoShare = drishya.table(
+  "video_share",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => explanationRevision.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    showQna: boolean("show_qna").notNull(),
+    showQuiz: boolean("show_quiz").notNull(),
+    content:
+      jsonb("content").$type<import("@drishya/contracts").LearningContent>(),
+    revoked: boolean("revoked").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("video_share_revision_idx").on(t.revisionId, t.createdAt)],
+);
+export const quizAttempt = drishya.table(
+  "quiz_attempt",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shareId: uuid("share_id")
+      .notNull()
+      .references(() => videoShare.id, { onDelete: "cascade" }),
+    secretHash: text("secret_hash").notNull(),
+    name: text("name").notNull(),
+    quiz: jsonb("quiz")
+      .notNull()
+      .$type<import("@drishya/contracts").LearningContent["quiz"]>(),
+    answers: jsonb("answers").$type<number[]>(),
+    score: integer("score"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  },
+  (t) => [index("quiz_attempt_share_started_idx").on(t.shareId, t.startedAt)],
+);
+export const videoFeedback = drishya.table(
+  "video_feedback",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => explanationRevision.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    rating: integer("rating").notNull(),
+    message: text("message").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("feedback_revision_user_idx").on(t.revisionId, t.userId)],
 );

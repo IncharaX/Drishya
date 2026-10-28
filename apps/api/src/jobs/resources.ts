@@ -1,5 +1,6 @@
 import {
   explanationRevision,
+  videoLearning,
   type generationJob,
   lessonVersion,
   project,
@@ -57,6 +58,12 @@ export async function resourceFailure(
   cancelled = false,
 ) {
   switch (job.kind) {
+    case "learning":
+      await tx
+        .update(videoLearning)
+        .set({ status: "failed", error: message, updatedAt: new Date() })
+        .where(eq(videoLearning.id, job.resourceId));
+      break;
     case "explanation": {
       const updated = await tx
         .update(explanationRevision)
@@ -132,6 +139,12 @@ export async function resourcePending(
   job: typeof generationJob.$inferSelect,
 ) {
   switch (job.kind) {
+    case "learning":
+      await tx
+        .update(videoLearning)
+        .set({ status: "queued", error: null, updatedAt: new Date() })
+        .where(eq(videoLearning.id, job.resourceId));
+      break;
     case "explanation": {
       const updated = await tx
         .update(explanationRevision)

@@ -63,6 +63,7 @@ chatRouter.post("/", async (req, res) => {
         res.locals.userId,
         input.prompt,
         input.requestId,
+        input.attachmentIds,
       ),
     );
 });
@@ -130,8 +131,8 @@ chatRouter.get("/library", async (req, res) => {
       revisionId: revision.id,
       kind: parts.length ? "collection" : "video",
       duration: revision.duration === null ? null : revision.duration / 1000,
-      posterUrl: files(chat.id, first?.id ?? revision.id, "poster.jpg"),
-      videoUrl: parts.length ? null : files(chat.id, revision.id, "video.mp4"),
+      posterUrl: `${files(chat.id, first?.id ?? revision.id, "poster.jpg")}?v=${(first ?? revision).updatedAt.getTime()}`,
+      videoUrl: parts.length ? null : `${files(chat.id, revision.id, "video.mp4")}?v=${revision.updatedAt.getTime()}`,
       captionsUrl: parts.length
         ? null
         : files(chat.id, revision.id, "captions.vtt"),
@@ -348,6 +349,7 @@ chatRouter.get(
       "captions.vtt": "text/vtt; charset=utf-8",
       "captions.srt": "application/x-subrip",
     };
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
     res.type(types[file]);
     if (req.query.download === "1")
       res.attachment(

@@ -51,6 +51,7 @@ export const localizedStoryboardSchema = z
   })
   .strict();
 export const voiceSchema = z.object({
+  gender: z.enum(["male", "female"]).default("male"),
   id: z.string(),
   language: narrationLanguageSchema,
   label: z.string(),
@@ -61,11 +62,32 @@ export const voiceSchema = z.object({
 });
 export const voiceCatalogSchema = z.object({ voices: z.array(voiceSchema) });
 export const synthesisSchema = z.object({
+  quality: z
+    .object({
+      verified: z.literal(true),
+      version: z.literal("verified-chunks-v1"),
+    })
+    .passthrough()
+    .optional(),
+  captions: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(350),
+        start: z.number().min(0),
+        end: z.number().positive(),
+      }),
+    )
+    .min(1)
+    .max(100)
+    .optional(),
   assetKey: z.string().regex(/^[a-f0-9]{64}$/),
   durationSeconds: z.number().positive(),
   sampleRate: z.number().positive(),
   channels: z.literal(1),
   cached: z.boolean(),
+  telemetry: z
+    .record(z.string(), z.union([z.number(), z.string(), z.boolean()]))
+    .optional(),
   settings: z.record(z.string(), z.unknown()),
 });
 export const sceneAudioSchema = synthesisSchema.extend({ sceneId: z.string() });

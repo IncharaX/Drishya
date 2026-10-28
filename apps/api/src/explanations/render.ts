@@ -10,7 +10,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { type MotionPlan, planFrames } from "@drishya/contracts";
+import {
+  type MotionPlan,
+  planFrames,
+  timedCaptionCues,
+} from "@drishya/contracts";
 import { bundle } from "@remotion/bundler";
 import {
   makeCancelSignal,
@@ -74,24 +78,14 @@ export function captionText(plan: MotionPlan, format: "vtt" | "srt") {
     index = 0;
   const cues: string[] = [];
   for (const beat of plan.beats) {
-    const chunks: string[] = [];
-    let current = "";
-    for (const word of beat.narration.split(/\s+/u)) {
-      if ((current + word).length > 70 && current) {
-        chunks.push(current.trim());
-        current = "";
-      }
-      current += `${word} `;
-    }
-    if (current) chunks.push(current.trim());
-    const duration = beat.audioDuration
-      ? beat.audioDuration / (beat.audioPlaybackRate ?? 1)
-      : (beat.durationInFrames ?? 180) / 30;
-    chunks.forEach((text, i) => {
+    for (const cue of timedCaptionCues(beat)) {
       cues.push(
-        `${++index}\n${stamp(cursor + 0.2 + (duration * i) / chunks.length)} --> ${stamp(cursor + 0.2 + (duration * (i + 1)) / chunks.length)}\n${text.replace(/[<>]/gu, "").replace(/-->/gu, "→")}\n`,
+        `${++index}\n${stamp(cursor + cue.start)} --> ${stamp(cursor + cue.end)}\n${cue.text.replace(/[<>]/gu, "").replace(/-->/gu, "→")}\n`,
       );
-    });
+    }
+    const duration =
+      (beat.audioDuration ?? (beat.durationInFrames ?? 180) / 30) /
+      (beat.audioPlaybackRate ?? 1);
     cursor += (beat.durationInFrames ?? Math.ceil((duration + 0.5) * 30)) / 30;
   }
   return (format === "vtt" ? "WEBVTT\n\n" : "") + cues.join("\n");
@@ -105,16 +99,44 @@ export async function renderExplanation(input: {
   requireNarration?: boolean;
 }) {
   const { id, plan, signal, onProgress } = input;
-  const scale = input.scale ?? 1.5,
+  const scale = input.scale ?? 1,
     output = revisionDirectory(id),
     work = path.join(output, `work-${randomUUID()}`);
   await mkdir(output, { recursive: true });
+  let chrome =
+    env.CHROME_PATH ??
+    (process.platform === "darwin"
+      ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+      : undefined);
+  // A separately prepared, benchmarked browser enables optimized frame capture.
+  // Generation never downloads a browser; dimensional scenes retain known-working Chrome.
+  if (
+    !plan.beats.some(
+      (beat) => beat.visual.dimension === "3d" || beat.visual.kind === "solar",
+    )
+  ) {
+    try {
+      const prepared = JSON.parse(
+        await readFile(
+          path.resolve(env.MEDIA_ROOT, "v2", "render-browser.json"),
+          "utf8",
+        ),
+      );
+      if (
+        prepared.rendererVersion === "4.0.539" &&
+        typeof prepared.path === "string" &&
+        existsSync(prepared.path)
+      )
+        chrome = prepared.path;
+    } catch {}
+  }
   const { url, key: bundleKey } = await motionBundle();
   const fingerprint = hash({
     plan,
     bundleKey,
     scale,
     audioPipeline: AUDIO_PIPELINE_VERSION,
+    renderBrowser: chrome,
   });
   try {
     const saved = JSON.parse(
@@ -136,11 +158,6 @@ export async function renderExplanation(input: {
     }
   } catch {}
   await mkdir(work, { recursive: true });
-  const chrome =
-    env.CHROME_PATH ??
-    (process.platform === "darwin"
-      ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-      : undefined);
   const browser = await openBrowser("chrome", {
     browserExecutable: chrome,
     logLevel: "error",
@@ -177,6 +194,7 @@ export async function renderExplanation(input: {
           language: plan.language,
           captions: plan.captions,
           bundleKey,
+          renderBrowser: chrome,
           scale,
         });
       const file = path.join(segmentsDir, `${cacheKey}.mp4`);
@@ -208,7 +226,10 @@ export async function renderExplanation(input: {
           gopSize: 30,
           muted: true,
           scale,
-          concurrency: 1,
+          concurrency:
+            beat.visual.dimension === "3d" || beat.visual.kind === "solar"
+              ? 1
+              : 2,
           puppeteerInstance: browser,
           cancelSignal,
           logLevel: "error",

@@ -1,3 +1,4 @@
+import { sourceUpload } from "@drishya/db/schema";
 import {
   type CreationSettings,
   chatMessageSchema,
@@ -74,23 +75,48 @@ export async function appendMessage(
 }
 export function inferSettings(text: string, base?: CreationSettings) {
   const settings = creationSettingsSchema.parse(base ?? {});
+  settings.voice = "male";
+  if (/1080p|full.?hd/iu.test(text)) settings.resolution = "1080p";
+  else if (/720p/iu.test(text)) settings.resolution = "720p";
   const languages = {
+    हिंदी: "hi",
+    हिन्दी: "hi",
+    ಕನ್ನಡ: "kn",
+    తెలుగు: "te",
     hindi: "hi",
     kannada: "kn",
     telugu: "te",
     english: "en",
   } as const;
   for (const [name, language] of Object.entries(languages))
-    if (new RegExp(`\\b${name}\\b`, "iu").test(text))
+    if (
+      new RegExp(
+        `[\\s,;:]${name}(?=$|[\\s,;.!])|^${name}(?=$|[\\s,;.!])`,
+        "iu",
+      ).test(text)
+    )
       settings.language = language;
-  if (/beginner|kids|children|year.old/iu.test(text))
+  if (/हिंदी|हिन्दी/iu.test(text)) settings.language = "hi";
+  if (/ಕನ್ನಡ/iu.test(text)) settings.language = "kn";
+  if (/తెలుగు/iu.test(text)) settings.language = "te";
+  const explicitlyRequestedLanguage = text
+    .match(/\b(?:in|language\s*:)\s+(english|hindi|kannada|telugu)\b/iu)?.[1]
+    ?.toLowerCase() as "english" | "hindi" | "kannada" | "telugu" | undefined;
+  if (explicitlyRequestedLanguage)
+    settings.language = languages[explicitlyRequestedLanguage];
+  if (/\b(?:one|a) minute\b/iu.test(text)) settings.duration = 60;
+  if (
+    /beginner|kids|children|years?[ -]old|(?:[1-9](?:st|nd|rd|th)? (?:grade|standard))|school student/iu.test(
+      text,
+    )
+  )
     settings.audience = "beginner";
   else if (/expert|advanced|technical audience/iu.test(text))
     settings.audience = "advanced";
-  const duration = text.match(/\b(\d{1,3})\s*(?:seconds?|secs?|s\b)/iu);
+  const duration = text.match(/\b(\d{1,3})[\s-]*(?:seconds?|secs?|s\b)/iu);
   if (duration && Number(duration[1]) >= 10 && Number(duration[1]) <= 960)
     settings.duration = Number(duration[1]);
-  const minutes = text.match(/\b(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m\b)/iu);
+  const minutes = text.match(/\b(\d+(?:\.\d+)?)[\s-]*(?:minutes?|mins?|m\b)/iu);
   if (
     !duration &&
     minutes &&
@@ -107,6 +133,8 @@ export function inferSettings(text: string, base?: CreationSettings) {
   else if (/step.by.step|\bsteps\b|workflow|process|\bflow\b/iu.test(text))
     settings.coverage = "steps";
   if (/\b3d\b|three.dimensional/iu.test(text)) settings.style = "spatial";
+  else if (/cinematic/iu.test(text)) settings.style = "cinematic";
+  else if (/2d|motion graphics/iu.test(text)) settings.style = "graphic";
   if (/(?:remove|disable|no) (?:subtitles|captions)/iu.test(text))
     settings.captions = false;
   if (/(?:remove|disable|no|mute).*(?:music|sound|score)/iu.test(text))
@@ -299,6 +327,7 @@ export async function createConversation(
   userId: string,
   prompt: string,
   requestId: string,
+  attachmentIds: string[] = [],
 ) {
   const id = await db.transaction(async (tx) => {
     await tx.execute(
@@ -348,12 +377,42 @@ export async function createConversation(
         settings,
       })
       .returning();
+    const attached = [];
+    let sourceCharacters = 0;
+    for (const attachmentId of [...new Set(attachmentIds)]) {
+      const [file] = await tx
+        .select()
+        .from(sourceUpload)
+        .where(
+          and(
+            eq(sourceUpload.id, attachmentId),
+            eq(sourceUpload.userId, userId),
+          ),
+        )
+        .for("update");
+      if (!file || file.conversationId)
+        throw new HttpError(
+          400,
+          "One of these files is unavailable. Upload it again.",
+        );
+      sourceCharacters += file.text.length;
+      if (sourceCharacters > 12000)
+        throw new HttpError(
+          400,
+          "Attached files exceed 12,000 extracted characters together.",
+        );
+      await tx
+        .update(sourceUpload)
+        .set({ conversationId: chat.id })
+        .where(eq(sourceUpload.id, file.id));
+      attached.push({ id: file.id, name: file.name, size: file.size });
+    }
     await appendMessage(
       tx,
       chat.id,
       "user",
       "text",
-      { text: prompt },
+      { text: prompt, attachments: attached },
       requestId,
     );
     await appendMessage(tx, chat.id, "assistant", "preferences", {
@@ -408,6 +467,10 @@ export async function makeRevision(
       conversationId: chat.id,
       version: (last?.version ?? 0) + 1,
       ...values,
+      settings: creationSettingsSchema.parse({
+        ...values.settings,
+        voice: "male",
+      }),
     })
     .returning();
   await enqueue(tx, {
@@ -822,7 +885,10 @@ export async function savePreferences(
       );
     await tx
       .update(conversation)
-      .set({ settings, updatedAt: new Date() })
+      .set({
+        settings: creationSettingsSchema.parse({ ...settings, voice: "male" }),
+        updatedAt: new Date(),
+      })
       .where(eq(conversation.id, id));
   });
   return { saved: true };

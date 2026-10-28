@@ -38,7 +38,12 @@ JSON schema: ${JSON.stringify(format)}`;
 
 export class OllamaPlanner implements PlannerProvider {
   constructor(
-    private config: { baseURL: string; model: string; timeoutMs: number },
+    private config: {
+      baseURL: string;
+      model: string;
+      timeoutMs: number;
+      onMetric?: (values: Record<string, unknown>) => Promise<void>;
+    },
   ) {}
   get model() {
     return this.config.model;
@@ -89,7 +94,9 @@ export class OllamaPlanner implements PlannerProvider {
     signal: AbortSignal,
     outputFormat: Record<string, unknown> = format,
     maxTokens = 3000,
+    retryTruncated = true,
   ): Promise<string> {
+    const started = Date.now();
     try {
       const response = await fetch(
         `${this.config.baseURL.replace(/\/$/, "")}/api/chat`,
@@ -127,14 +134,46 @@ export class OllamaPlanner implements PlannerProvider {
           "Ollama could not complete the request. Check its available memory and logs, then retry.",
         );
       const body = z
-        .object({ message: z.object({ content: z.string().max(64_000) }) })
+        .object({
+          message: z.object({ content: z.string().max(256_000) }),
+          done_reason: z.string().optional(),
+          total_duration: z.number().optional(),
+          load_duration: z.number().optional(),
+          prompt_eval_duration: z.number().optional(),
+          eval_duration: z.number().optional(),
+          eval_count: z.number().optional(),
+        })
         .safeParse(await response.json());
       if (!body.success)
         throw new PlannerError(
           "OLLAMA_RESPONSE",
           "Ollama returned an unexpected response. Check that your installed version supports structured chat output.",
         );
-      return body.data.message.content;
+      await this.config.onMetric?.({
+        elapsedMs: Date.now() - started,
+        totalMs: (body.data.total_duration ?? 0) / 1e6,
+        loadMs: (body.data.load_duration ?? 0) / 1e6,
+        promptMs: (body.data.prompt_eval_duration ?? 0) / 1e6,
+        decodeMs: (body.data.eval_duration ?? 0) / 1e6,
+        outputTokens: body.data.eval_count,
+        maxTokens,
+      });
+      // Indic scripts can require many more tokens than English for the same
+      // text length. Never pass a token-truncated object to JSON.parse callers.
+      const content = body.data.message.content;
+      let invalidJson = false;
+      try { JSON.parse(content); } catch { invalidJson = true; }
+      if (body.data.done_reason === "length" || invalidJson) {
+        if (retryTruncated) {
+          return this.generate(messages, signal, outputFormat,
+            Math.min(16384, Math.max(maxTokens * 2, 6000)), false);
+        }
+        throw new PlannerError(
+          "INCOMPLETE_MODEL_JSON",
+          "The local model returned incomplete JSON. Retry this version; no narration or voice settings were changed.",
+        );
+      }
+      return content;
     } catch (error) {
       if (error instanceof PlannerError) throw error;
       if (signal.aborted)

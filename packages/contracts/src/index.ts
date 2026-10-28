@@ -16,3 +16,4 @@ export * from "./video";
 export * from "./jobs";
 export * from "./library";
 export * from "./explanation";
+export * from "./learning";

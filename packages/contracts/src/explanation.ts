@@ -2,6 +2,7 @@ import { z } from "zod";
 import { narrationLanguageSchema } from "./planning";
 export const creationSettingsSchema = z.object({
   language: narrationLanguageSchema.default("en"),
+  voice: z.enum(["male", "female"]).default("male"),
   audience: z
     .enum(["general", "beginner", "familiar", "advanced"])
     .default("general"),
@@ -14,6 +15,7 @@ export const creationSettingsSchema = z.object({
   style: z.enum(["auto", "cinematic", "graphic", "spatial"]).default("auto"),
   captions: z.boolean().default(true),
   sound: z.enum(["auto", "off"]).default("auto"),
+  resolution: z.enum(["720p", "1080p"]).default("720p"),
   context: z.string().max(6000).default(""),
 });
 export type CreationSettings = z.infer<typeof creationSettingsSchema>;
@@ -51,6 +53,15 @@ export const visualNodeSchema = z.object({
       "gear",
       "package",
       "idea",
+      "plant",
+      "roots",
+      "soil",
+      "water",
+      "leaf",
+      "sun",
+      "air",
+      "food",
+      "label",
     ])
     .default("auto"),
   shape: z.enum(["sphere", "cube", "cylinder"]).default("sphere"),
@@ -67,6 +78,26 @@ export const visualSchema = z.object({
     .default([]),
   code: z.string().max(1000).default(""),
   focus: z.string().max(80).default(""),
+  actions: z
+    .array(
+      z.object({
+        operation: z.enum([
+          "type",
+          "transfer",
+          "transform",
+          "reveal",
+          "compare",
+        ]),
+        subjectId: z.string(),
+        targetId: z.string(),
+        cue: z.string().min(3).max(180),
+        at: z.number().min(0).max(0.95).optional(),
+        label: z.string().max(40).optional(),
+      }),
+    )
+    .min(2)
+    .max(13)
+    .optional(),
   array: z
     .object({
       operation: z.enum([
@@ -91,6 +122,12 @@ export const explanationBeatSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,30}$/),
   title: z.string().min(1).max(100),
   narration: z.string().min(8).max(1000),
+  evidence: z
+    .array(
+      z.object({ sourceId: z.string(), quote: z.string().min(20).max(350) }),
+    )
+    .max(4)
+    .optional(),
   visual: visualSchema,
   theme: z
     .object({
@@ -114,6 +151,17 @@ export const explanationBeatSchema = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .optional(),
   audioDuration: z.number().positive().optional(),
+  speechVerified: z.literal("verified-chunks-v1").optional(),
+  captionCues: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(350),
+        start: z.number().min(0),
+        end: z.number().positive(),
+      }),
+    )
+    .max(100)
+    .optional(),
   audioPlaybackRate: z.number().min(0.85).max(1.18).default(1),
   durationInFrames: z.number().int().positive().optional(),
 });
@@ -142,6 +190,34 @@ export const motionPlanSchema = z.object({
 });
 export type MotionPlan = z.infer<typeof motionPlanSchema>;
 export type ExplanationBeat = z.infer<typeof explanationBeatSchema>;
+export function timedCaptionCues(beat: ExplanationBeat) {
+  const rate = beat.audioPlaybackRate ?? 1;
+  if (beat.speechVerified && beat.captionCues?.length)
+    return beat.captionCues.map((cue) => ({
+      ...cue,
+      start: 0.2 + cue.start / rate,
+      end: 0.2 + cue.end / rate,
+    }));
+  const words = beat.narration.split(/\s+/u),
+    chunks: { text: string; count: number }[] = [];
+  for (const word of words) {
+    const last = chunks.at(-1);
+    if (!last || last.text.length + word.length > 64)
+      chunks.push({ text: word, count: 1 });
+    else {
+      last.text += ` ${word}`;
+      last.count++;
+    }
+  }
+  const duration =
+    (beat.audioDuration ?? (beat.durationInFrames ?? 180) / 30) / rate;
+  let cursor = 0;
+  return chunks.map((chunk) => {
+    const start = cursor;
+    cursor += (chunk.count / words.length) * duration;
+    return { text: chunk.text, start: 0.2 + start, end: 0.2 + cursor };
+  });
+}
 export const chapterProposalSchema = z.object({
   title: z.string().max(140),
   objective: z.string().max(600),
@@ -222,7 +298,11 @@ export const conversationListSchema = z.object({
   conversations: z.array(conversationSchema),
 });
 export const createConversationSchema = z
-  .object({ prompt: z.string().trim().min(2).max(8000), requestId: z.uuid() })
+  .object({
+    prompt: z.string().trim().min(2).max(8000),
+    requestId: z.uuid(),
+    attachmentIds: z.array(z.uuid()).max(3).default([]),
+  })
   .strict();
 export const generateExplanationSchema = z
   .object({ settings: creationSettingsSchema, requestId: z.uuid() })
@@ -324,10 +404,35 @@ export function visualIssues(plan: MotionPlan) {
         `${beat.id}: keep code to 12 lines of at most 75 characters; use more beats for longer walkthroughs.`,
       );
     const ids = new Set(beat.visual.nodes.map((n) => n.id));
+    if (beat.visual.actions) {
+      let previous = -1;
+      for (const action of beat.visual.actions) {
+        if (!ids.has(action.subjectId) || !ids.has(action.targetId))
+          issues.push(
+            `${beat.id}: actions must reference existing artifact IDs.`,
+          );
+        if (
+          ["transfer", "transform", "compare"].includes(action.operation) &&
+          action.subjectId === action.targetId
+        )
+          issues.push(
+            `${beat.id}: this action needs distinct source and target artifacts.`,
+          );
+        const position = beat.narration.indexOf(action.cue);
+        if (action.at === undefined && (position < 0 || position < previous))
+          issues.push(
+            `${beat.id}: action cues must be exact narration excerpts in spoken order.`,
+          );
+        previous = position;
+      }
+    }
     if (
       beat.visual.kind === "array" &&
       (!beat.visual.array ||
-        beat.visual.array.index >= beat.visual.array.items.length)
+        (["read", "update", "operations"].includes(
+          beat.visual.array.operation,
+        ) &&
+          beat.visual.array.index >= beat.visual.array.items.length))
     )
       issues.push(
         `${beat.id}: array demonstrations need concrete items and an index inside the collection.`,

@@ -169,6 +169,22 @@ export function PreferencesCard({
       </button>
       {more && (
         <div className="v2-advanced-fields">
+          <label htmlFor={`${id}-resolution`}>
+            Download quality
+            <ChoiceSelect
+              label="Download quality"
+              id={`${id}-resolution`}
+              value={settings.resolution}
+              disabled={readOnly || pending}
+              onChange={(value) =>
+                field("resolution", value as CreationSettings["resolution"])
+              }
+              options={[
+                { value: "720p", label: "720p · faster export" },
+                { value: "1080p", label: "1080p · higher resolution" },
+              ]}
+            />
+          </label>
           <label htmlFor={`${id}-style`}>
             Visual direction
             <ChoiceSelect

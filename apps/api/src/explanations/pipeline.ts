@@ -1,7 +1,13 @@
+import { sourceUpload } from "@drishya/db/schema";
 import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { applyDirectorEdit, ExplanationDirector } from "@drishya/ai";
+import {
+  applyDirectorEdit,
+  ExplanationDirector,
+  ScopeQuestion,
+  sourceGroundingIssues,
+} from "@drishya/ai";
 import {
   beatStart,
   creationSettingsSchema,
@@ -21,15 +27,22 @@ import { db } from "../database";
 import { env } from "../env";
 import { HttpError } from "../http-error";
 import { checkpoint, jobFence } from "../jobs/context";
+import { metric } from "../jobs/metrics";
 import { reconcileCollection } from "../jobs/resources";
 import { getVoices, synthesize } from "../speech/client";
 import { renderExplanation } from "./render";
-import { appendMessage, makeRevision, inferSettings, type RevisionRecord } from "./service";
+import {
+  appendMessage,
+  inferSettings,
+  makeRevision,
+  type RevisionRecord,
+} from "./service";
 
 const director = new ExplanationDirector({
   baseURL: env.OLLAMA_BASE_URL,
   model: env.OLLAMA_MODEL,
   timeoutMs: env.OLLAMA_TIMEOUT_MS,
+  onMetric: (values) => metric("qwen", values),
 });
 async function releaseWriter(signal: AbortSignal) {
   if (os.totalmem() > 20 * 1024 ** 3) return;
@@ -245,6 +258,21 @@ export async function executeExplanation(id: string, signal: AbortSignal) {
   if (row.status === "ready") return;
   row.settings = creationSettingsSchema.parse(row.settings);
   if (row.plan) row.plan = motionPlanSchema.parse(row.plan);
+  if (row.settings.voice !== "male") {
+    if (row.plan)
+      for (const beat of row.plan.beats) {
+        delete beat.audioKey;
+        delete beat.audioDuration;
+        delete beat.speechVerified;
+        delete beat.captionCues;
+        delete beat.durationInFrames;
+        beat.audioPlaybackRate = 1;
+      }
+    row = await save(id, {
+      settings: { ...row.settings, voice: "male" },
+      plan: row.plan,
+    });
+  }
   const started = Date.now();
   try {
     await stage(id, "Understanding your request", 4, "planning");
@@ -262,6 +290,16 @@ export async function executeExplanation(id: string, signal: AbortSignal) {
       .from(conversation)
       .where(eq(conversation.id, row.conversationId));
     if (!chat) throw new HttpError(404, "Chat no longer exists.");
+    const files = await db
+      .select()
+      .from(sourceUpload)
+      .where(eq(sourceUpload.conversationId, chat.id));
+    // Keep sources independent from the revision returned by save(). Reloading
+    // metadata must never remove the document before the actual writing call.
+    const sources =
+      row.intent === "edit"
+        ? []
+        : files.map(({ id, name, text }) => ({ id, name, text }));
     let plan = row.plan;
     if (!plan && row.intent === "edit") {
       const [base] = row.sourceRevisionId
@@ -302,6 +340,8 @@ export async function executeExplanation(id: string, signal: AbortSignal) {
           row.settings.language,
           signal,
         );
+      } else if (row.edit.duplicate) {
+        plan = structuredClone(base.plan);
       } else {
         const edit = await director.revise(
           base.plan,
@@ -395,15 +435,30 @@ Requested revision: ${row.request}`,
           edit: { ...row.edit, appliedChanges: changes },
         });
       }
+      if (row.settings.voice !== base.settings.voice) {
+        for (const beat of plan.beats) {
+          delete beat.audioKey;
+          delete beat.captionCues;
+          delete beat.speechVerified;
+          delete beat.audioDuration;
+          delete beat.durationInFrames;
+        }
+      }
       plan.captions = row.settings.captions;
       row = await save(id, { plan, title: plan.title });
     }
     if (!plan) {
-      if (row.intent !== "child") {
+      const singlePass =
+        row.intent !== "child" &&
+        row.settings.coverage === "overview" &&
+        typeof row.settings.duration === "number" &&
+        row.settings.duration <= 120;
+      if (row.intent !== "child" && !singlePass) {
         const assessment = await director.assess(
           `${row.request}${row.settings.context ? `\nAdditional context: ${row.settings.context}` : ""}${row.edit.answer ? `\nClarification: ${row.edit.answer}` : ""}`,
           row.settings,
           signal,
+          sources,
         );
         await checkpoint("Planning your explanation", 10);
         row = await save(id, { title: assessment.title });
@@ -438,11 +493,22 @@ Requested revision: ${row.request}`,
         15,
         "generating",
       );
-      plan = await director.create(
-        `${row.request}${row.settings.context ? `\nContext: ${row.settings.context}` : ""}${row.edit.answer ? `\nClarification: ${row.edit.answer}` : ""}`,
-        row.settings,
-        signal,
-      );
+      try {
+        plan = await director.create(
+          `${row.request}${row.settings.context ? `\nContext: ${row.settings.context}` : ""}${row.edit.answer ? `\nClarification: ${row.edit.answer}` : ""}`,
+          row.settings,
+          signal,
+          singlePass,
+          sources,
+        );
+      } catch (error) {
+        if (error instanceof ScopeQuestion) {
+          await ask(row, error.question, error.options);
+          return;
+        }
+        throw error;
+      }
+      await metric("plan_ready", { singlePass, beats: plan.beats.length });
       if (row.intent === "child") plan.title = row.title;
       if (row.settings.style === "spatial")
         plan.beats.forEach((beat) => {
@@ -468,8 +534,43 @@ Requested revision: ${row.request}`,
         timings: { ...row.timings, writingMs: Date.now() - started },
       });
     }
+    // Repair obvious text-budget misses before paying for any speech inference.
+    if (
+      !plan.beats.some((beat) => beat.audioKey) &&
+      plan.language === "en" &&
+      typeof row.settings.duration === "number" &&
+      row.settings.duration <= 120 &&
+      !row.timings.preflightDone
+    ) {
+      const words = plan.beats.reduce(
+          (sum, beat) => sum + beat.narration.trim().split(/\s+/u).length,
+          0,
+        ),
+        target = row.settings.duration;
+      if (words < target * 1.7 || words > target * 3.1) {
+        await metric("duration_preflight", {
+          words,
+          target,
+          estimatedSeconds: words / 2.65,
+        });
+        plan = await director.fitNarration(plan, target, words / 2.65, signal);
+      }
+      row = await save(id, {
+        plan,
+        timings: { ...row.timings, preflightDone: 1 },
+      });
+    }
+    const groundingIssues = sourceGroundingIssues(plan, sources);
+    if (groundingIssues.length)
+      throw new HttpError(
+        503,
+        `The script did not explain the uploaded source accurately: ${groundingIssues[0]}`,
+      );
     const voice = (await getVoices()).voices.find(
-      (voice) => voice.language === row.settings.language && voice.ready,
+      (voice) =>
+        voice.language === row.settings.language &&
+        voice.gender === row.settings.voice &&
+        voice.ready,
     );
     if (!voice)
       throw new HttpError(
@@ -497,6 +598,7 @@ Requested revision: ${row.request}`,
             cached = false;
           }
         if (!cached) {
+          const speechStarted = Date.now();
           const audio = await synthesize(
             beat.narration,
             current.language,
@@ -504,9 +606,25 @@ Requested revision: ${row.request}`,
             1,
             signal,
           );
+          await metric("synthesis", {
+            beatId: beat.id,
+            language: current.language,
+            elapsedMs: Date.now() - speechStarted,
+            audioSeconds: audio.durationSeconds,
+            cached: audio.cached,
+            telemetry: audio.telemetry,
+            fitAttempt: row.edit.fitAttempts ?? 0,
+          });
           beat.audioKey = audio.assetKey;
           beat.audioDuration = audio.durationSeconds;
+          beat.captionCues = audio.captions;
+          beat.speechVerified = audio.quality?.version;
         }
+        if (cached)
+          await metric("synthesis_cache", {
+            beatId: beat.id,
+            audioSeconds: beat.audioDuration,
+          });
         beat.durationInFrames = Math.ceil(
           ((beat.audioDuration ?? 6) + 0.5) * 30,
         );
@@ -529,11 +647,21 @@ Requested revision: ${row.request}`,
     while (
       !preserved &&
       fitAttempts < 2 &&
-      (naturalSeconds() > target ||
-        (explicit !== null && naturalSeconds() < target * 0.8))
+      (naturalSeconds() >
+        (target - plan.beats.length * 0.28) * 1.18 + plan.beats.length * 0.28 ||
+        (explicit !== null &&
+          (naturalSeconds() - plan.beats.length * 0.28) / 0.85 +
+            plan.beats.length * 0.28 <
+            target * 0.8 - 0.5))
     ) {
       if (!explicit && row.settings.coverage !== "overview") break;
       fitAttempts++;
+      await metric("duration_rewrite", {
+        attempt: fitAttempts,
+        naturalSeconds: naturalSeconds(),
+        target,
+        rejectedBeatIds: plan.beats.map((beat) => beat.id),
+      });
       await stage(
         id,
         `Fitting the explanation to ${target} seconds (${fitAttempts}/2)`,
@@ -541,13 +669,28 @@ Requested revision: ${row.request}`,
         "generating",
       );
       row = await save(id, { edit: { ...row.edit, fitAttempts } });
+      const previousNarrations = plan.beats.map((beat) => beat.narration);
       plan = await director.fitNarration(
         plan,
         target,
         naturalSeconds(),
         signal,
       );
+      const rewrittenIssues = sourceGroundingIssues(plan, sources);
+      if (rewrittenIssues.length)
+        throw new HttpError(
+          503,
+          `The timing rewrite lost source grounding: ${rewrittenIssues[0]}`,
+        );
       row = await save(id, { plan });
+      if (
+        plan.beats.every(
+          (beat, index) => beat.narration === previousNarrations[index],
+        )
+      ) {
+        await metric("fitting_noop", { attempt: fitAttempts });
+        break;
+      }
       await releaseWriter(signal);
       await narrate(plan);
     }
@@ -614,8 +757,19 @@ Requested revision: ${row.request}`,
       (sum, beat) => sum + (beat.audioDuration ?? 0),
       0,
     );
-    const available = desired - plan.beats.length * 0.28;
-    if (rawSpeech > available) {
+    // Reserve one frame per beat for independent ceil() rounding; otherwise
+    // a mathematically exact tempo could overflow the target by 1–2 frames.
+    const available = desired - plan.beats.length * (0.28 + 1 / 30);
+    const currentMinimumFrames = plan.beats.reduce(
+      (sum, beat) =>
+        sum +
+        Math.ceil(
+          ((beat.audioDuration ?? 0) / (beat.audioPlaybackRate ?? 1) + 0.28) *
+            30,
+        ),
+      0,
+    );
+    if (currentMinimumFrames > Math.round(desired * 30)) {
       const rate = rawSpeech / available;
       if (rate > 1.18) {
         await ask(
@@ -638,6 +792,27 @@ Requested revision: ${row.request}`,
         beat.audioPlaybackRate = rate;
       });
     }
+    if (
+      !preserved &&
+      explicit &&
+      rawSpeech + plan.beats.length * 0.28 < desired * 0.8
+    ) {
+      const gentleRate = Math.max(
+        0.85,
+        Math.min(
+          1,
+          rawSpeech / Math.max(1, desired * 0.8 - plan.beats.length * 0.28),
+        ),
+      );
+      plan.beats.forEach((beat) => {
+        beat.audioPlaybackRate = gentleRate;
+      });
+      await metric("teaching_pace", {
+        rate: gentleRate,
+        spokenSeconds: rawSpeech / gentleRate,
+        visualActionSeconds: desired - rawSpeech / gentleRate,
+      });
+    }
     plan = fitExactTimeline(plan, desired);
     row = await save(id, {
       plan,
@@ -654,6 +829,7 @@ Requested revision: ${row.request}`,
     const result = await renderExplanation({
       id,
       plan,
+      scale: row.settings.resolution === "1080p" ? 1.5 : 1,
       signal,
       onProgress: async (name, progress) =>
         stage(id, name, progress, "rendering"),
@@ -667,6 +843,7 @@ Requested revision: ${row.request}`,
       segmentKeys: result.segmentKeys,
       timings: {
         ...row.timings,
+        exportHeight: row.settings.resolution === "1080p" ? 1080 : 720,
         renderMs: Date.now() - renderStart,
         totalMs: Date.now() - started,
       },

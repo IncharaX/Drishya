@@ -9,30 +9,24 @@ const clamp = {
   extrapolateLeft: "clamp" as const,
   extrapolateRight: "clamp" as const,
 };
-function semantic(node: ExplanationBeat["visual"]["nodes"][number]) {
-  if (node.icon && node.icon !== "auto") return node.icon;
-  const text = node.label;
-  return /customer|person|user|team|support|manager|human/iu.test(text)
-    ? "person"
-    : /refund|payment|finance|money|cost/iu.test(text)
-      ? "coins"
-      : /approve|success|complete|confirm|ready/iu.test(text)
-        ? "check"
-        : /review|question|decision|detail/iu.test(text)
-          ? "question"
-          : /server|api|database|system|code/iu.test(text)
-            ? "server"
-            : /request|form|document|submit/iu.test(text)
-              ? "document"
-              : /ship|order|product|package/iu.test(text)
-                ? "package"
-                : /atom|science|energy/iu.test(text)
-                  ? "atom"
-                  : /planet|earth|sun/iu.test(text)
-                    ? "planet"
-                    : "idea";
-}
+
+import { MergeScene } from "./merge";
+import { semanticAsset as semantic } from "./semantics";
+
 const paths: Record<string, string> = {
+  plant:
+    "M28 53V22M28 34C3 37 3 13 27 23M28 25C50 29 54 6 29 15M28 44l-12 9m12-9 12 9",
+  roots:
+    "M28 3v21m0-7L15 8m13 15 14-10M28 24 12 38l-7 13m7-13 7 12M28 24l2 21-9 10m9-10 8 8M28 24l15 14 7 13m-7-13-6 8",
+  soil: "M3 20h50M5 28l5 3m9-5 5 3m14-3 7 3M7 39l5 3m13-5 7 3m10-2 5 3M4 52h48",
+  water:
+    "M28 3C21 16 9 29 9 37a19 19 0 0 0 38 0C47 29 35 16 28 3Zm-9 33c-2 6 2 10 7 11",
+  leaf: "M10 45C-1 12 30 3 51 5c-2 27-15 48-40 39M7 51 43 13M20 36l-2-14m11 5 12-1",
+  sun: "M28 15a13 13 0 1 0 .1 0M28 2v6m0 40v6M2 28h6m40 0h6M9 9l5 5m28 28 5 5M9 47l5-5m28-28 5-5",
+  air: "M4 18h32c16 0 14-18 2-14M4 28h43c11 0 10 14 0 14M4 38h20c14 0 12 15 1 15",
+  food: "M9 14h38v34H9Zm0 0 19-10 19 10M28 4v35M9 14l19 12 19-12M28 26v22",
+  label: "M6 7h44v42H6M14 19h28M14 28h28M14 37h18",
+
   person: "M28 23a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM10 49v-5c0-11 36-11 36 0v5Z",
   document: "M13 4h22l9 10v38H13Zm22 0v12h9M21 25h16M21 33h16M21 41h10",
   check: "M9 28l13 13 27-28",
@@ -74,6 +68,121 @@ function Rod({
   );
 }
 function ObjectMesh({ kind, color }: { kind: string; color: string }) {
+  if (kind === "plant" || kind === "leaf")
+    return (
+      <group>
+        <Rod
+          from={[0, -0.65, 0]}
+          to={[0, 0.65, 0]}
+          color="#418854"
+          radius={0.055}
+        />
+        {[-1, 1].map((side) => (
+          <mesh
+            key={side}
+            position={[side * 0.3, side * 0.25, 0]}
+            rotation={[0, 0, side * -0.8]}
+            scale={[0.5, 0.22, 0.08]}
+          >
+            <sphereGeometry args={[1, 32, 16]} />
+            <meshStandardMaterial color="#56aa67" roughness={0.65} />
+          </mesh>
+        ))}
+        {kind === "plant" && (
+          <Rod
+            from={[-0.3, -0.8, 0]}
+            to={[0, -0.6, 0]}
+            color="#987353"
+            radius={0.04}
+          />
+        )}
+      </group>
+    );
+  if (kind === "roots")
+    return (
+      <group>
+        {[-1, 0, 1].map((side) => (
+          <React.Fragment key={side}>
+            <Rod
+              from={[0, 0.6, 0]}
+              to={[side * 0.5, -0.3, 0]}
+              color="#a27c52"
+              radius={0.06}
+            />
+            <Rod
+              from={[side * 0.5, -0.3, 0]}
+              to={[side * 0.6, -0.75, 0]}
+              color="#a27c52"
+              radius={0.035}
+            />
+          </React.Fragment>
+        ))}
+      </group>
+    );
+  if (kind === "soil")
+    return (
+      <group>
+        <mesh>
+          <boxGeometry args={[1.5, 0.6, 0.65]} />
+          <meshStandardMaterial color="#8b6444" roughness={1} />
+        </mesh>
+        {[-0.4, 0, 0.4].map((x) => (
+          <mesh key={x} position={[x, 0.32, 0.08]}>
+            <sphereGeometry args={[0.06, 12, 8]} />
+            <meshStandardMaterial color="#ba946b" />
+          </mesh>
+        ))}
+      </group>
+    );
+  if (kind === "sun")
+    return (
+      <mesh>
+        <sphereGeometry args={[0.65, 40, 24]} />
+        <meshStandardMaterial
+          color="#ffbf36"
+          emissive="#e89118"
+          emissiveIntensity={0.65}
+        />
+      </mesh>
+    );
+  if (kind === "water")
+    return (
+      <group>
+        <mesh scale={[0.6, 0.8, 0.6]}>
+          <sphereGeometry args={[0.7, 32, 24]} />
+          <meshStandardMaterial color="#419fdb" roughness={0.15} />
+        </mesh>
+        <mesh position={[0, 0.6, 0]}>
+          <coneGeometry args={[0.35, 0.7, 24]} />
+          <meshStandardMaterial color="#419fdb" roughness={0.15} />
+        </mesh>
+      </group>
+    );
+  if (kind === "label") return null;
+  if (kind === "air")
+    return (
+      <group>
+        {[-0.55, 0, 0.55].map((x, index) => (
+          <mesh key={x} position={[x, 0, 0]}>
+            <sphereGeometry args={[index === 1 ? 0.22 : 0.3, 32, 20]} />
+            <meshStandardMaterial color={index === 1 ? "#526474" : "#e96d6d"} />
+          </mesh>
+        ))}
+        <Rod
+          from={[-0.55, 0, 0]}
+          to={[0.55, 0, 0]}
+          color="#899fa6"
+          radius={0.04}
+        />
+      </group>
+    );
+  if (kind === "food")
+    return (
+      <mesh>
+        <boxGeometry args={[1.15, 0.8, 0.25]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
+      </mesh>
+    );
   const material = (
     <meshStandardMaterial color={color} roughness={0.24} metalness={0.18} />
   );
@@ -242,7 +351,7 @@ export function DirectedScene({
         (Math.min(columns, count - Math.floor(index / columns) * columns) - 1) /
           2) *
         (count <= 2 ? 480 : 360),
-    y: count <= 3 ? 345 : Math.floor(index / columns) * 200 + 260,
+    y: count <= 3 ? 345 : Math.floor(index / columns) * 215 + 265,
   }));
   const dimensional =
     beat.visual.dimension === "3d" || beat.visual.kind === "spatial";
@@ -262,6 +371,33 @@ export function DirectedScene({
         (other) => other.from === link.from && other.to === link.to,
       ),
   );
+  const mergeTarget = nodes.find(
+    (node) =>
+      connections.filter((edge) => edge.to === node.id).length ===
+      nodes.length - 1,
+  );
+  if (mergeTarget && count >= 3 && count <= 6 && !dimensional) {
+    const resolved = {
+      ...beat,
+      visual: {
+        ...beat.visual,
+        nodes: nodes.map((node) => ({
+          ...node,
+          icon: semantic(node) as typeof node.icon,
+        })),
+      },
+    };
+    return (
+      <MergeScene
+        beat={resolved}
+        targetId={mergeTarget.id}
+        accent={accent}
+        ink={ink}
+        dark={dark}
+        paths={paths}
+      />
+    );
+  }
   return (
     <div style={{ position: "absolute", inset: 0, fontFamily: font }}>
       <svg
@@ -293,16 +429,17 @@ export function DirectedScene({
             ux = dx / length,
             uy = dy / length;
           // Anchor in the actual direction of travel, outside each object.
-          const clearance = count <= 3 ? 100 : 65;
-          const sx = from.x + ux * clearance,
-            sy = from.y + uy * clearance,
-            tx = to.x - ux * clearance,
-            ty = to.y - uy * clearance;
+          const clearance = count <= 3 ? 118 : 120;
+          const sx = Math.abs(dx) < 1 ? from.x + 145 : from.x + ux * clearance,
+            sy =
+              Math.abs(dx) < 1 ? from.y : from.y + uy * Math.min(clearance, 45),
+            tx = Math.abs(dx) < 1 ? to.x + 145 : to.x - ux * clearance,
+            ty = Math.abs(dx) < 1 ? to.y : to.y - uy * Math.min(clearance, 45);
           const reciprocal = connections.some(
             (edge) => edge.from === link.to && edge.to === link.from,
           );
           const bend = reciprocal ? 44 : Math.abs(dy) > 0 ? 30 : 0;
-          const cx = (sx + tx) / 2 - uy * bend,
+          const cx = Math.abs(dx) < 1 ? sx + 85 : (sx + tx) / 2 - uy * bend,
             cy = (sy + ty) / 2 + ux * bend;
           const curve = `M${sx} ${sy} Q${cx} ${cy} ${tx} ${ty}`;
           const reveal = interpolate(

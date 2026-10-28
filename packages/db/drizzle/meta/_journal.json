@@ -50,6 +50,20 @@
       "when": 1793107011300,
       "tag": "0006_futuristic_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793127664032,
+      "tag": "0007_gifted_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793128598980,
+      "tag": "0008_gorgeous_micromax",
+      "breakpoints": true
     }
   ]
 }

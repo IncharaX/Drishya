@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackCard } from "./feedback";
 import { type ExplanationRevision, planFrames } from "@drishya/contracts";
 import { ExplanationComposition } from "@drishya/motion";
 import { Tooltip } from "@drishya/ui/components/tooltip";
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { explanationAudio, explanationFile } from "@/lib/explanations";
+import { explanationAudio, explanationFile as originalExplanationFile } from "@/lib/explanations";
 import { StudioVideo } from "./studio-video";
 
 export function VideoResult({
@@ -35,6 +36,11 @@ export function VideoResult({
   onRetry?: (id?: string) => void;
   onTimestamp?: (time: number, revisionId?: string) => void;
 }) {
+  // Repairs replace media within a revision; give the browser a new URL.
+  const explanationFile = (...args: Parameters<typeof originalExplanationFile>) => {
+    const url = originalExplanationFile(...args);
+    return `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(revision.updatedAt ?? revision.createdAt)}`;
+  };
   const player = useRef<PlayerRef>(null),
     video = useRef<HTMLVideoElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null),
@@ -163,7 +169,8 @@ export function VideoResult({
               Your video is ready
             </div>
             <span>
-              {revision.duration?.toFixed(0)}s · 1080p ·{" "}
+              {revision.duration?.toFixed(0)}s ·{" "}
+              {revision.timings.exportHeight ?? 1080}p ·{" "}
               {revision.settings.language.toUpperCase()}
             </span>
           </div>
@@ -234,6 +241,7 @@ export function VideoResult({
             )}
             <span className="v2-saved-note">Saved to library</span>
           </div>
+          <FeedbackCard key={revision.id} revisionId={revision.id} />
         </>
       ) : failed ? (
         <div className="v2-generation-failed">

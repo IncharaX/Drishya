@@ -11,6 +11,9 @@ import sys
 import threading
 import uuid
 import wave
+import time
+import socket
+import select
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Also support direct launch with the existing Python, without a dotenv dependency.
@@ -65,7 +68,7 @@ def copy_output(source, destination):
         temp.unlink(missing_ok=True)
 
 
-def synthesize(body):
+def synthesize(body, cancelled=lambda:False):
     if not isinstance(body, dict):
         raise TTSError("INVALID_REQUEST", "Expected a JSON object.", 400)
     if set(body) - {"text", "language", "output_path", "outputPath", "voiceId", "speed"}:
@@ -77,14 +80,15 @@ def synthesize(body):
         raise TTSError("INVALID_TEXT", "Narration must contain 1–1600 characters.", 400)
     if body.get("speed", 1) != 1:
         raise TTSError("UNSUPPORTED_SPEED", "This provider uses the known-working natural teaching pace (1×). Speed processing belongs in the later audio pipeline.", 400)
-    speaker = PROFILES[language][0]
-    voice_id = f"indic-parler-{language}-{speaker.lower()}"
-    if body.get("voiceId", voice_id) != voice_id:
-        raise TTSError("UNSUPPORTED_VOICE", "Choose the configured Indic Parler speaker for this language.", 400)
+    speaker,_ = MODEL.profile(language,body.get("voiceId"))
+    voice_id=f"indic-parler-{language}-{speaker.lower()}"
     output = resolve_output(body.get("output_path", body.get("outputPath")))
     text = text.strip()
+    queued = time.perf_counter()
     with LOCK:
-        settings = MODEL.settings(language)
+        if cancelled():raise TTSError("REQUEST_CANCELLED","Narration request was cancelled.",499)
+        lock_wait_ms = (time.perf_counter()-queued)*1000
+        settings = MODEL.settings(language,voice_id)
         key = hashlib.sha256(json.dumps({"text": text, "settings": settings}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         target, manifest = AUDIO / f"{key}.wav", AUDIO / f"{key}.json"
         if target.is_file() and manifest.is_file():
@@ -93,19 +97,28 @@ def synthesize(body):
                 actual = wav_info(target)
                 if saved.get("assetKey") == key and saved.get("settings") == settings:
                     copy_output(target, output)
-                    return {**saved, **actual, "cached": True, "output_path": str(output or target)}
+                    return {**saved, **actual, "cached": True, "telemetry": {"cacheHit": True, "lockWaitMs": lock_wait_ms, "totalMs": (time.perf_counter()-queued)*1000}, "output_path": str(output or target)}
             except (OSError, ValueError, EOFError, wave.Error):
                 pass
         temp = AUDIO / f"{uuid.uuid4().hex}.wav"
         try:
-            MODEL.generate(text, language, temp)
+            telemetry = MODEL.generate(text, language, temp,voice_id,cancelled)
+            quality=telemetry.pop("quality",None)
+            captions=telemetry.pop("captions",None)
+            telemetry.update({"cacheHit": False, "lockWaitMs": lock_wait_ms})
+            with (AUDIO / "synthesis-metrics.jsonl").open("a") as log:
+                log.write(json.dumps({"at": time.time(), "language": language, "characters": len(text), "assetKey": key, **telemetry})+"\n")
             result = {"assetKey": key, **wav_info(temp), "settings": settings}
             temp.replace(target)
             metadata = AUDIO / f"{uuid.uuid4().hex}.json"
             metadata.write_text(json.dumps(result, ensure_ascii=False))
             metadata.replace(manifest)
             copy_output(target, output)
-            return {**result, "cached": False, "output_path": str(output or target)}
+            return {**result, "cached": False, "telemetry": telemetry, "output_path": str(output or target)}
+        except TTSError as error:
+            with (AUDIO / "synthesis-metrics.jsonl").open("a") as log:
+                log.write(json.dumps({"at": time.time(), "language": language, "characters": len(text), "assetKey": key, "failed": True, "code": error.code, "totalMs": (time.perf_counter()-queued)*1000})+"\n")
+            raise
         finally:
             temp.unlink(missing_ok=True)
 
@@ -154,7 +167,11 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 32768:
                 raise TTSError("INVALID_REQUEST", "Speech request is empty or too large.", 400)
-            result = synthesize(json.loads(self.rfile.read(length)))
+            def cancelled():
+                try:
+                    return bool(select.select([self.connection],[],[],0)[0]) and self.connection.recv(1,socket.MSG_PEEK|socket.MSG_DONTWAIT)==b""
+                except OSError:return True
+            result = synthesize(json.loads(self.rfile.read(length)),cancelled)
             self.reply(200, result)
         except TTSError as error:
             print(f"Speech error: {error.code}", file=sys.stderr, flush=True)
@@ -174,6 +191,14 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     print(f"Drishya speech listening on 127.0.0.1:{server.server_port}; interpreter: {sys.executable}", flush=True)
+    def prewarm():
+        try:
+            with LOCK:
+                MODEL.load()
+        except TTSError as error:
+            print(f"Speech prewarm failed: {error.code}", file=sys.stderr, flush=True)
+    if os.environ.get("TTS_PREWARM", "1") == "1":
+        threading.Thread(target=prewarm, daemon=True).start()
     try:
         server.serve_forever()
     finally:
