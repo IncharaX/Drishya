@@ -339,6 +339,7 @@ export async function executeExplanation(id: string, signal: AbortSignal) {
           base.plan,
           row.settings.language,
           signal,
+          async(done,total)=>{ await stage(id,`Translating text ${done} of ${total}`,8+Math.floor(done/total*24),"generating"); },
         );
       } else if (row.edit.duplicate) {
         plan = structuredClone(base.plan);
@@ -496,7 +497,9 @@ Requested revision: ${row.request}`,
       try {
         plan = await director.create(
           `${row.request}${row.settings.context ? `\nContext: ${row.settings.context}` : ""}${row.edit.answer ? `\nClarification: ${row.edit.answer}` : ""}`,
-          row.settings,
+          ["kn", "te"].includes(row.settings.language)
+            ? {...row.settings, language: "en"}
+            : row.settings,
           signal,
           singlePass,
           sources,
@@ -533,6 +536,15 @@ Requested revision: ${row.request}`,
         title: plan.title,
         timings: { ...row.timings, writingMs: Date.now() - started },
       });
+    }
+    // Persist the canonical plan before translating. A translation retry reuses
+    // it and the per-field cache instead of repeating the full writing stage.
+    if (plan.language !== row.settings.language) {
+      await stage(id,"Translating narration and labels",25,"generating");
+      plan = await director.translate(plan,row.settings.language,signal,async(done,total)=>{
+        await stage(id,`Translating text ${done} of ${total}`,25+Math.floor(done/total*8),"generating");
+      });
+      row=await save(id,{plan});
     }
     // Repair obvious text-budget misses before paying for any speech inference.
     if (

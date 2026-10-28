@@ -38,7 +38,7 @@ For the hackathon demo, choose a duration within **30–90 seconds**. The applic
 
 ### Current readiness
 
-English and Hindi videos have completed through the application. English, Hindi, Kannada and Telugu speech have each produced local audio in earlier checks. **Kannada and Telugu end-to-end video generation are not currently reliable**: recent jobs encountered structured-output limits, translation limits and timeouts before narration. Configured language support is not a claim that all four full-video paths pass.
+Video generation is available in **English, Hindi, Kannada and Telugu**. After the regional-language pipeline fixes, Kannada and Telugu generation was confirmed working by the user through the app. The revised path saves an English visual plan, translates and caches individual text fields, and fits regional narration one section at a time. This confirmation covers the tested app flow, not every possible topic or duration.
 
 A built-in example exists at `/workspace/example`, but the current chat pipeline **does not automatically substitute a complete narrated fallback lesson when generation fails**. It shows the failure and retry controls. The brief's automatic fallback requirement remains an implementation gap.
 
@@ -212,8 +212,8 @@ The standard profile requires internet when its database is Neon, even though it
 | --- | --- | --- | --- |
 | English | `en` | Thoma | Local speech and completed videos |
 | Hindi | `hi` | Rohit | Local speech and completed videos |
-| Kannada | `kn` | Suresh | Local speech generated; recent full-video jobs have failed |
-| Telugu | `te` | Prakash | Local speech generated; full-video reliability unresolved |
+| Kannada | `kn` | Suresh | Speech and video generation confirmed in user app testing |
+| Telugu | `te` | Prakash | Speech and video generation confirmed in user app testing |
 
 These are speaker names from the Indic Parler model, not custom cloned voices. Only the original male profiles are active. Female selection and experimental Whisper-based speech verification are disabled. Pronunciation and translation require human review; the application does not guarantee error-free narration.
 
@@ -236,7 +236,7 @@ Suggested live demonstration:
 3. Enter: **“Explain how a Python for loop works for a beginner in English in 30 seconds.”**
 4. Confirm preferences and show the persisted job progress.
 5. Play the result, including code highlights, changing state and output; download the MP4.
-6. Show an already-reviewed Indian-language lesson and the saved library. Attempt a new regional-language generation only with awareness of the current reliability limits.
+6. Generate an Indian-language lesson, then show its narration, native-script captions and saved library entry. Review the selected demo topic and duration beforehand.
 
 The brief asks for two topics—one judge-provided and one chosen by the team—with **each topic in English and one Indian language**. Prepare and review all four exports. Generated files are gitignored; they must be attached to the submission separately or deliberately packaged.
 
@@ -261,7 +261,7 @@ That local file is not automatically included in a fresh clone. No claim is made
 
 The speech provider has a CPU fallback, but **a complete CPU-only run on an 8–16 GB laptop has not been benchmarked**. The hackathon's CPU-only requirement must not be inferred from the MPS demo.
 
-Historical fresh 30-second worker runs completed in approximately **238–304 seconds**, with narrated previews at **158–232 seconds**. These used different prompts and intermediate code revisions, so they are not a controlled benchmark of the final checkout. Recent regional-language retries took substantially longer or failed. The target of a roughly two-minute 720p export is **not a measured guarantee**.
+Historical fresh 30-second worker runs completed in approximately **238–304 seconds**, with narrated previews at **158–232 seconds**. These used different prompts and intermediate code revisions, so they are not a controlled benchmark of the final checkout. Earlier regional-language failures prompted the canonical-plan and cached-translation fixes; those historical runs do not measure the corrected path. The target of a roughly two-minute 720p export is **not a measured guarantee**.
 
 See [the performance report](docs/PERFORMANCE-REPORT.md) for per-stage measurements and methodology. Job telemetry is stored under the active media root's `v2/metrics/` directory and distinguishes queue waits, worker attempts, Qwen calls, speech, fitting and render stages.
 

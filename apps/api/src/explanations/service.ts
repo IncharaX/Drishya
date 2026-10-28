@@ -184,7 +184,7 @@ export async function listConversations(
 }
 export async function detail(userId: string, id: string) {
   const row = await ownedChat(userId, id);
-  const [messages, revisions, workers, history, queue] = await Promise.all([
+  const [messages, revisions, workers, history, queue, revisionJobs] = await Promise.all([
     db
       .select()
       .from(conversationMessage)
@@ -230,7 +230,23 @@ export async function detail(userId: string, id: string) {
       })
       .from(generationJob)
       .where(inArray(generationJob.status, ["queued", "running", "retrying"])),
+    db.select({resourceId:generationJob.resourceId,status:generationJob.status,errorMessage:generationJob.errorMessage})
+      .from(generationJob)
+      .innerJoin(explanationRevision,eq(generationJob.resourceId,explanationRevision.id))
+      .where(eq(explanationRevision.conversationId,id))
+      .orderBy(desc(generationJob.createdAt)),
   ]);
+  // A worker can exit after the job becomes terminal but before the revision's
+  // final status is written. Never leave the chat showing an endless spinner.
+  for (const revision of revisions) {
+    if (!["queued","planning","generating","narrating","rendering"].includes(revision.status)) continue;
+    const job=revisionJobs.find(job=>job.resourceId===revision.id);
+    if(job?.status==="failed" || job?.status==="cancelled"){
+      revision.status=job.status;
+      revision.stage=job.status==="failed"?"Generation needs attention":"Cancelled";
+      revision.errorMessage=job.errorMessage??"Generation stopped. Retry this version to reuse saved progress.";
+    }
+  }
   const usable = history.filter(
     (item) => item.duration && item.timings.totalMs,
   );
